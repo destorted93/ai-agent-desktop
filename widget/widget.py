@@ -3,6 +3,7 @@
 import sys
 import os
 import sounddevice as sd
+
 import wave
 import requests
 import io
@@ -14,7 +15,7 @@ import websockets
 import traceback
 from PyQt6.QtWidgets import (QApplication, QWidget, QPushButton, QVBoxLayout, 
                               QHBoxLayout, QMenu, QTextEdit, QLineEdit, QScrollArea,
-                              QLabel, QFrame, QSizePolicy, QLayout)
+                              QLabel, QFrame, QSizePolicy, QLayout, QDialog, QMessageBox)
 from PyQt6.QtGui import QAction, QTextCursor, QFont, QTextOption, QKeyEvent, QPainter, QColor, QPen, QPixmap
 from PyQt6.QtCore import Qt, QPoint, QEvent, pyqtSignal, QObject, QThread, pyqtSlot, QTimer, QRect, QSize
 
@@ -1050,6 +1051,89 @@ class ChatWindow(QWidget):
         event.ignore()
 
 
+class SettingsWindow(QDialog):
+    """Lightweight settings window to be filled later."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("AI Agent Settings")
+        self.setModal(False)
+        # Keep it small and simple; can be resized later
+        self.resize(380, 260)
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
+
+        # Use shared secure storage package
+        from secure_storage import load_config, save_config, get_secret, set_secret
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        title = QLabel("Settings (coming soon)")
+        title.setStyleSheet("font-size: 14px; font-weight: bold;")
+        layout.addWidget(title)
+
+        desc = QLabel("Configure your provider and credentials. Tokens are stored securely using the OS keychain.")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+        # Base URL
+        url_label = QLabel("Base URL")
+        self.url_input = QLineEdit()
+        self.url_input.setPlaceholderText("https://api.example.com")
+        layout.addWidget(url_label)
+        layout.addWidget(self.url_input)
+
+        # API token (masked)
+        token_label = QLabel("API Token")
+        self.token_input = QLineEdit()
+        self.token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.token_input.setPlaceholderText("Enter token (leave empty to keep existing)")
+        layout.addWidget(token_label)
+        layout.addWidget(self.token_input)
+
+        # Buttons
+        buttons = QHBoxLayout()
+        self.save_btn = QPushButton("Save")
+        self.close_btn = QPushButton("Close")
+        buttons.addStretch(1)
+        buttons.addWidget(self.save_btn)
+        buttons.addWidget(self.close_btn)
+        layout.addLayout(buttons)
+
+        # Load existing values
+        cfg = load_config()
+        self.url_input.setText(cfg.get("base_url", ""))
+        existing_token = get_secret("api_token")
+        if existing_token:
+            self.token_input.setPlaceholderText("Token is saved (hidden)")
+
+        def on_save():
+            url = self.url_input.text().strip()
+            token = self.token_input.text().strip()
+            cfg = load_config()
+            if url:
+                cfg["base_url"] = url
+            elif "base_url" in cfg:
+                del cfg["base_url"]
+            save_config(cfg)
+
+            if token:
+                try:
+                    set_secret("api_token", token)
+                    self.token_input.clear()
+                    self.token_input.setPlaceholderText("Token is saved (hidden)")
+                except Exception as e:
+                    QMessageBox.warning(self, "Save Error", f"Failed to store token securely: {e}")
+                    return
+
+            QMessageBox.information(self, "Settings", "Settings saved.")
+
+        self.save_btn.clicked.connect(on_save)
+        self.close_btn.clicked.connect(self.close)
+
+        layout.addStretch(1)
+
+
 class Gadget(QWidget):
     # Signals for thread-safe UI updates
     history_loaded = pyqtSignal(list)
@@ -1083,6 +1167,8 @@ class Gadget(QWidget):
         
         # Chat window
         self.chat_window = None
+        # Settings window (lazy created)
+        self.settings_window = None
         self.agent_url = os.environ.get("AGENT_URL", "http://127.0.0.1:6002")
         
         # WebSocket tracking for cancellation
@@ -1280,6 +1366,11 @@ class Gadget(QWidget):
         menu.addMenu(lang_menu)
 
         menu.addSeparator()
+        settings_action = QAction("Settings…", self)
+        settings_action.triggered.connect(self.open_settings)
+        menu.addAction(settings_action)
+
+        menu.addSeparator()
         clear_chat_action = QAction("Clear Chat History", self)
         clear_chat_action.triggered.connect(self.clear_chat_all)
         menu.addAction(clear_chat_action)
@@ -1291,6 +1382,14 @@ class Gadget(QWidget):
 
         # Show menu below the main button
         menu.exec(self.main_btn.mapToGlobal(self.main_btn.rect().bottomLeft()))
+
+    def open_settings(self):
+        """Open the small settings window (non-modal)."""
+        if self.settings_window is None:
+            self.settings_window = SettingsWindow(self)
+        self.settings_window.show()
+        self.settings_window.raise_()
+        self.settings_window.activateWindow()
 
     def _set_language(self, code: str):
         allowed = {"en", "ro", "ru", "de", "fr", "es"}

@@ -1,42 +1,69 @@
 import os
 import json
+from pathlib import Path
 from datetime import datetime
 
-MEMORY_FILE = os.path.join(os.path.dirname(__file__), 'memories.json')
+from secure_storage import app_data_dir, write_encrypted_json, read_encrypted_json
+
+LEGACY_MEMORY_FILE = os.path.join(os.path.dirname(__file__), 'memories.json')
+SECURE_MEMORY_FILE = app_data_dir() / 'memories.enc'
 
 class MemoryManager:
-    def __init__(self, file_path=MEMORY_FILE):
-        self.file_path = file_path
-        # Ensure the memories file exists on initialization
-        if not os.path.exists(self.file_path):
-            try:
-                with open(self.file_path, 'w', encoding='utf-8') as f:
-                    json.dump([], f, ensure_ascii=False, indent=2)
-            except Exception:
-                # If file creation fails, proceed; load_memories will handle gracefully
-                pass
+    def __init__(self, file_path: str = LEGACY_MEMORY_FILE):
+        self.legacy_file_path = Path(file_path)
+        self.secure_file_path = Path(SECURE_MEMORY_FILE)
+        self._migrate_legacy_memories()
         self.memories = self.load_memories()
 
+    def _migrate_legacy_memories(self):
+        try:
+            if self.secure_file_path.exists():
+                return
+            if self.legacy_file_path.exists():
+                try:
+                    with open(self.legacy_file_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    if not isinstance(data, list):
+                        data = []
+                except Exception:
+                    data = []
+                write_encrypted_json(self.secure_file_path, data)
+                bak = self.legacy_file_path.with_suffix(self.legacy_file_path.suffix + '.bak')
+                try:
+                    if not bak.exists():
+                        os.replace(self.legacy_file_path, bak)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     def load_memories(self):
-        if os.path.exists(self.file_path):
+        data = read_encrypted_json(self.secure_file_path)
+        if isinstance(data, list):
+            return data
+        # Last resort: try legacy
+        if self.legacy_file_path.exists():
             try:
-                with open(self.file_path, 'r', encoding='utf-8') as f:
+                with open(self.legacy_file_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     if isinstance(data, list):
                         return data
-                    else:
-                        return []
-            except Exception as e:
-                return []
+            except Exception:
+                pass
         return []
 
     def save_memories(self):
         try:
-            with open(self.file_path, 'w', encoding='utf-8') as f:
-                json.dump(self.memories, f, ensure_ascii=False, indent=2)
+            write_encrypted_json(self.secure_file_path, self.memories)
             return {"status": "success"}
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            # Attempt legacy fallback
+            try:
+                with open(self.legacy_file_path, 'w', encoding='utf-8') as f:
+                    json.dump(self.memories, f, ensure_ascii=False, indent=2)
+                return {"status": "success"}
+            except Exception as e2:
+                return {"status": "error", "message": str(e2)}
 
     def get_memories(self):
         return self.memories

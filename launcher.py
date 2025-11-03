@@ -145,11 +145,17 @@ def main():
     print("Starting Widget UI...")
     
     # Start widget (foreground - this is the main UI)
+    # Ensure the repo root is importable for shared modules (e.g., secure_storage)
+    repo_root = script_dir
+    existing_pp = os.environ.get("PYTHONPATH", "")
+    new_pp = repo_root if not existing_pp else repo_root + os.pathsep + existing_pp
+
     widget_proc = subprocess.Popen(
         [sys.executable, "widget.py"],
         cwd=widget_dir,
         env={
             **os.environ,
+            "PYTHONPATH": new_pp,
             "TRANSCRIBE_URL": f"http://127.0.0.1:{transcribe_port}/upload",
             "AGENT_URL": f"http://127.0.0.1:{agent_port}"
         }
