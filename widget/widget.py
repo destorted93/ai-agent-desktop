@@ -60,7 +60,8 @@ class ScreenshotSelector(QWidget):
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
             painter.fillRect(selection_rect, Qt.GlobalColor.transparent)
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
-            painter.drawPixmap(selection_rect, self.screenshot, selection_rect)
+            # Avoid implicit scaling by drawing the source rect at its top-left
+            painter.drawPixmap(selection_rect.topLeft(), self.screenshot, selection_rect)
             
             # Draw selection border
             pen = QPen(QColor(0, 150, 255), 2, Qt.PenStyle.SolidLine)
