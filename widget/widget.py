@@ -1062,7 +1062,7 @@ class SettingsWindow(QDialog):
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
 
         # Use shared secure storage package
-        from secure_storage import load_config, save_config, get_secret, set_secret
+        from secure_storage import load_config, save_config, get_secret, set_secret, delete_secret
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -1083,11 +1083,10 @@ class SettingsWindow(QDialog):
         layout.addWidget(url_label)
         layout.addWidget(self.url_input)
 
-        # API token (masked)
+        # API token (visible for now per request)
         token_label = QLabel("API Token")
         self.token_input = QLineEdit()
-        self.token_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.token_input.setPlaceholderText("Enter token (leave empty to keep existing)")
+        self.token_input.setPlaceholderText("Enter token (leave empty to clear)")
         layout.addWidget(token_label)
         layout.addWidget(self.token_input)
 
@@ -1105,7 +1104,8 @@ class SettingsWindow(QDialog):
         self.url_input.setText(cfg.get("base_url", ""))
         existing_token = get_secret("api_token")
         if existing_token:
-            self.token_input.setPlaceholderText("Token is saved (hidden)")
+            # Show the token plainly for now (testing/dev UX)
+            self.token_input.setText(existing_token)
 
         def on_save():
             url = self.url_input.text().strip()
@@ -1119,12 +1119,15 @@ class SettingsWindow(QDialog):
 
             if token:
                 try:
+                    # Overwrite deterministically: delete then set
+                    delete_secret("api_token")
                     set_secret("api_token", token)
-                    self.token_input.clear()
-                    self.token_input.setPlaceholderText("Token is saved (hidden)")
                 except Exception as e:
                     QMessageBox.warning(self, "Save Error", f"Failed to store token securely: {e}")
                     return
+            else:
+                # Empty input means clear token
+                delete_secret("api_token")
 
             QMessageBox.information(self, "Settings", "Settings saved.")
 
