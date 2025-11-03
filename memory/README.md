@@ -8,8 +8,11 @@ Stores key facts about the user that the AI agent should remember across session
 
 ## Storage
 
-- **File**: `memories.json`
-- **Format**: JSON array of memory objects
+- Location: `%APPDATA%/ai-agent-desktop/memories.enc`
+- Format: Encrypted JSON (Fernet AEAD)
+- Key management: Encryption key (`data_key`) is stored in Windows Credential Manager under service `ai-agent-desktop/data_key` (username `data_key`).
+
+The module uses the shared `secure_storage` package to read/write encrypted data. No plaintext memory files are used.
 
 ## Memory Structure
 
@@ -29,6 +32,16 @@ The agent automatically uses memory tools to:
 - Add new memories during conversations
 - Update existing memories
 - Delete outdated memories
+
+Programmatic access:
+
+```python
+from memory.memory import MemoryManager
+
+mm = MemoryManager()
+all_memories = mm.get_memories()
+mm.add_memory("User prefers Python over JavaScript")
+```
 
 ## Tools Available
 

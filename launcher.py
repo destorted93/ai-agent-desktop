@@ -8,6 +8,7 @@ import time
 import signal
 import atexit
 import requests
+from secure_storage import get_secret
 
 # Store process references
 processes = []
@@ -85,22 +86,22 @@ def start_service(name, cmd, cwd, env_vars=None, wait_for_health=None):
 
 def main():
     """Main launcher function."""
-    # Get API key
+    # Get API key (env takes precedence, fallback to credentials manager)
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        # Show error dialog if running hidden
+        api_key = get_secret("api_token")
+    if not api_key:
+        # Inform the user and exit
+        msg = (
+            "No API token found.\n\n"
+            "Set the OPENAI_API_KEY environment variable, or open the widget Settings and save an API Token\n"
+            "(stored in Windows Credential Manager as ai-agent-desktop/api_token)."
+        )
         if sys.platform == 'win32':
             import ctypes
-            ctypes.windll.user32.MessageBoxW(
-                0,
-                "OPENAI_API_KEY environment variable is not set.\n\n"
-                "Please set it in your system environment variables or run START.bat instead.",
-                "API Key Missing",
-                0x10  # MB_ICONERROR
-            )
+            ctypes.windll.user32.MessageBoxW(0, msg, "API Token Missing", 0x10)
         else:
-            print("Error: OPENAI_API_KEY environment variable is not set!")
-        sys.exit(1)
+            print("Error: " + msg)
     
     script_dir = os.path.dirname(os.path.abspath(__file__))
     transcribe_dir = os.path.join(script_dir, "transcribe")
