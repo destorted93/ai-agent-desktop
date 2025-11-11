@@ -187,13 +187,10 @@ class Agent:
                             yield {"type": "response.output_item.done", "item": event.item}
                     elif event.type == "response.image_generation_call.generating":
                         yield {"type": "response.image_generation_call.generating"}
-
                     elif event.type == "response.image_generation_call.partial_image":
                         yield {"type": "response.image_generation_call.partial_image", "data": event}
-
                     elif event.type == "response.image_generation_call.completed":
                         yield {"type": "response.image_generation_call.completed", "data": event}
-
                     elif event.type == "response.completed":
                         # Collect token usage for this turn
                         self.token_usage = {

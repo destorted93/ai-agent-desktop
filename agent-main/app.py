@@ -87,6 +87,7 @@ def initialize_agent(load_history=True):
     
     # Initialize tools
     selected_tools = [
+        # Memory Management Tools
         GetUserMemoriesTool(),
         CreateUserMemoryTool(),
         UpdateUserMemoryTool(),
@@ -96,10 +97,12 @@ def initialize_agent(load_history=True):
         GetChatHistoryEntryTool(),
         DeleteChatHistoryEntriesTool(),
         GetChatHistoryStatsTool(),
+        # To-do Management Tools
         GetTodosTool(),
         CreateTodoTool(),
         UpdateTodoTool(),
         DeleteTodoTool(),
+        # File System Interaction Tools
         ReadFolderContentTool(root_path=project_root),
         ReadFileContentTool(root_path=project_root),
         WriteFileContentTool(root_path=project_root, permission_required=False),
@@ -112,7 +115,7 @@ def initialize_agent(load_history=True):
         RenamePathTool(root_path=project_root),
         MovePathsTool(root_path=project_root),
         PathStatTool(root_path=project_root),
-        WebSearchTool(),
+        # WebSearchTool(),
     ]
     
     # Initialize agent configuration
