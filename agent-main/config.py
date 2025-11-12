@@ -11,7 +11,7 @@ USER_ID = "user_12345"
 # Agent model configuration
 MODEL_NAME = "gpt-5"
 TEMPERATURE = 1.0
-REASONING_EFFORT = "low"
-REASONING_SUMMARY = "auto"
+REASONING_EFFORT = "high"
+REASONING_SUMMARY = "detailed"
 TEXT_VERBOSITY = "medium"
 MAX_TURNS = 32

@@ -1,39 +1,26 @@
 import os
 import json
+from pathlib import Path
 from datetime import datetime
 
-MEMORY_FILE = os.path.join(os.path.dirname(__file__), 'memories.json')
+from secure_storage import app_data_dir, write_encrypted_json, read_encrypted_json
+
+SECURE_MEMORY_FILE = app_data_dir() / 'memories.enc'
 
 class MemoryManager:
-    def __init__(self, file_path=MEMORY_FILE):
-        self.file_path = file_path
-        # Ensure the memories file exists on initialization
-        if not os.path.exists(self.file_path):
-            try:
-                with open(self.file_path, 'w', encoding='utf-8') as f:
-                    json.dump([], f, ensure_ascii=False, indent=2)
-            except Exception:
-                # If file creation fails, proceed; load_memories will handle gracefully
-                pass
+    def __init__(self, file_path: str | None = None):
+        self.secure_file_path = Path(SECURE_MEMORY_FILE)
         self.memories = self.load_memories()
 
     def load_memories(self):
-        if os.path.exists(self.file_path):
-            try:
-                with open(self.file_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    if isinstance(data, list):
-                        return data
-                    else:
-                        return []
-            except Exception as e:
-                return []
+        data = read_encrypted_json(self.secure_file_path)
+        if isinstance(data, list):
+            return data
         return []
 
     def save_memories(self):
         try:
-            with open(self.file_path, 'w', encoding='utf-8') as f:
-                json.dump(self.memories, f, ensure_ascii=False, indent=2)
+            write_encrypted_json(self.secure_file_path, self.memories)
             return {"status": "success"}
         except Exception as e:
             return {"status": "error", "message": str(e)}

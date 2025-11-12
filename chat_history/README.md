@@ -13,8 +13,12 @@ Persists entire conversation threads including:
 
 ## Storage
 
-- **Chat History**: `chat_history.json`
-- **Generated Images**: `generated_images.json`
+- Chat History: `%APPDATA%/ai-agent-desktop/chat_history.enc` (encrypted JSON via Fernet)
+- Generated Images: `generated_images.json` (metadata) — unchanged
+
+Encryption key management:
+- The symmetric key (`data_key`) is stored in Windows Credential Manager under service `ai-agent-desktop/data_key` (username `data_key`).
+- Encryption/decryption is handled by the shared `secure_storage` package.
 
 ## Entry Format
 
@@ -32,10 +36,10 @@ Each entry is wrapped with metadata:
 
 ## Features
 
-- **Auto-load**: Previous conversations resume automatically
-- **Searchable**: Query history by metadata or content
-- **Stats**: Track conversation size and entry counts
-- **Cleanup**: Delete old or unwanted entries
+- Auto-load: Previous conversations resume automatically (from encrypted store)
+- Searchable: Query history by metadata or content
+- Stats: Track conversation size and entry counts
+- Cleanup: Delete old or unwanted entries
 
 ## Tools Available
 
@@ -46,30 +50,9 @@ Each entry is wrapped with metadata:
 
 ## Integration
 
-Used by `agent-main/app.py` to maintain conversation context
-3. **Management**: Can selectively delete or analyze entries by ID
-4. **Analytics**: Track conversation size, types, and growth over time
-5. **Backwards Compatible**: Automatic migration from old format
-
-## Migration
-
-### Automatic Migration
-
-The `ChatHistoryManager` automatically detects and migrates old format files on first load. A message will be printed to console.
-
-### Manual Migration
-
-Run the migration script to explicitly migrate and see detailed statistics:
-
-```powershell
-python migrate_chat_history.py
-```
-
-This will:
-- Create a timestamped backup of your current history
-- Convert all entries to the new wrapped format
-- Show statistics about your chat history
-- Save the migrated data
+Used by `agent-main/app.py` to maintain conversation context.
+3. Management: Selectively delete or analyze entries by ID
+4. Analytics: Track conversation size, types, and growth over time
 
 ## New Tools
 
@@ -250,14 +233,11 @@ print(f"Remaining: {result['remaining_count']} entries")
 4. **Review before deleting** - Use `GetChatHistoryEntryTool` to inspect entries before deletion
 5. **Monitor size growth** - Use stats tool periodically to track conversation size
 
-## Backwards Compatibility
-
-- ✅ Existing code using `chat_history_manager.get_history()` works unchanged
-- ✅ OpenAI API receives the same message format as before
-- ✅ Old format files are automatically migrated on load
-- ✅ All existing functionality preserved
-
 ## Technical Details
+
+- Data is encrypted using Fernet (AES-128 + HMAC) via the `secure_storage` helpers.
+- The encryption key is stored in the Windows Credential Manager (`ai-agent-desktop/data_key`).
+- No legacy JSON file is used for chat history. All reads/writes go to the encrypted store.
 
 ### Wrapping Process
 

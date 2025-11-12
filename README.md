@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Desktop AI assistant with voice input, chat interface, and powerful tools.
+Desktop AI assistant with voice input, chat interface, encrypted history, and powerful tools.
 
 ## 🚀 Quick Start
 
@@ -33,8 +33,9 @@ A modular AI agent that:
 - **widget/** - Desktop UI with voice/chat
 
 ### Data & Tools
-- **chat_history/** - Conversation persistence
-- **memory/** - User context storage
+- **chat_history/** - Conversation persistence (encrypted)
+- **memory/** - User context storage (encrypted)
+- **secure_storage/** - Config, keychain secrets, and encrypted JSON helpers
 - **tools/** - Agent capabilities (filesystem, web, todos, etc.)
 
 ### Utilities
@@ -52,7 +53,7 @@ A modular AI agent that:
 - Real-time streaming responses
 - Color-coded output (thinking, responses, function calls)
 - Screenshot sharing
-- Persistent history
+- Encrypted, persistent history
 
 ### 🛠️ Agent Capabilities
 - **Files**: Read, write, search, edit
@@ -116,17 +117,19 @@ python widget/widget.py
 
 ## Configuration
 
-Set your OpenAI API key:
+Set your OpenAI API key (either method works):
 ```bash
 # Windows
 $env:OPENAI_API_KEY = "sk-..."
 
-# Or edit config.py files
+# Or use the widget Settings (⚙) to save an API Token
+# The token is stored in Windows Credential Manager under
+#   Service: ai-agent-desktop/api_token, Username: api_token
 ```
 
 ## Service Ports
 
-- **6000** - Transcribe service
+- **6001** - Transcribe service
 - **6002** - Agent service
 - Widget connects to both
 
@@ -152,6 +155,7 @@ ai-agent-desktop/
 ├── tools/              # Agent tools
 ├── chat_history/       # Conversation storage
 ├── memory/             # User context
+├── secure_storage/     # Shared secure storage helpers
 └── service-template/   # New service boilerplate
 ```
 
@@ -183,7 +187,7 @@ For detailed instructions, see [LAUNCH_GUIDE.md](LAUNCH_GUIDE.md)
 - **▶ Start Recording** - Record voice input
 - **⏹ Stop Recording** - Stop and transcribe
 - **💬 Chat** - Open/close chat window
-- **⚙ Settings** - Language selection and options
+- **⚙ Settings** - Language selection, Base URL, and API Token
 
 ### Chat Window
 - Type messages or use voice input
@@ -223,8 +227,19 @@ When services are running, access interactive API docs:
 ### Widget (Desktop App)
 - Always-on-top interface
 - Voice recording with transcription
-- Chat window with persistent history
+- Chat window with encrypted, persistent history
 - Draggable, customizable position
+
+## Storage and Security
+
+- Chat history and memories are stored encrypted at:
+  - `%APPDATA%/ai-agent-desktop/chat_history.enc`
+  - `%APPDATA%/ai-agent-desktop/memories.enc`
+- Encryption key (`data_key`) is stored in Windows Credential Manager:
+  - Service: `ai-agent-desktop/data_key`, Username: `data_key`
+- API Token saved from Settings is stored under:
+  - Service: `ai-agent-desktop/api_token`, Username: `api_token`
+- See `secure_storage/README.md` for details.
 
 ## Contributing
 
