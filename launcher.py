@@ -8,7 +8,7 @@ import time
 import signal
 import atexit
 import requests
-from secure_storage import get_secret
+from secure_storage import get_secret, load_config
 
 # Store process references
 processes = []
@@ -86,23 +86,6 @@ def start_service(name, cmd, cwd, env_vars=None, wait_for_health=None):
 
 def main():
     """Main launcher function."""
-    # Get API key (env takes precedence, fallback to credentials manager)
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        api_key = get_secret("api_token")
-    if not api_key:
-        # Inform the user and exit
-        msg = (
-            "No API token found.\n\n"
-            "Set the OPENAI_API_KEY environment variable, or open the widget Settings and save an API Token\n"
-            "(stored in Windows Credential Manager as ai-agent-desktop/api_token)."
-        )
-        if sys.platform == 'win32':
-            import ctypes
-            ctypes.windll.user32.MessageBoxW(0, msg, "API Token Missing", 0x10)
-        else:
-            print("Error: " + msg)
-    
     script_dir = os.path.dirname(os.path.abspath(__file__))
     transcribe_dir = os.path.join(script_dir, "transcribe")
     agent_dir = os.path.join(script_dir, "agent-main")
@@ -121,7 +104,6 @@ def main():
         [sys.executable, "app.py"],
         transcribe_dir,
         env_vars={
-            "OPENAI_API_KEY": api_key,
             "PORT": str(transcribe_port)
         },
         wait_for_health=f"http://127.0.0.1:{transcribe_port}/health"
@@ -132,7 +114,7 @@ def main():
         "Agent Service",
         [sys.executable, "app.py", "--mode", "service", "--port", str(agent_port)],
         agent_dir,
-        env_vars={"OPENAI_API_KEY": api_key},
+        env_vars={},
         wait_for_health=f"http://127.0.0.1:{agent_port}/health"
     )
     

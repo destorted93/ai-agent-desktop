@@ -44,6 +44,8 @@ from tools import (
 from chat_history import ChatHistoryManager
 from tools.todo_tools import TodoManager
 
+from secure_storage import load_config, save_config, get_secret, set_secret, delete_secret
+
 import base64
 from PIL import Image
 import io
@@ -66,10 +68,21 @@ user_id = config.USER_ID
 project_root = None
 partial_images = {}
 
+# Get API key (env takes precedence, fallback to credentials manager)
+api_key = os.environ.get("OPENAI_API_KEY")
+if not api_key:
+    api_key = get_secret("api_token")
+
+# Get Base URL (env takes precedence, fallback to credentials manager)
+base_url = os.environ.get("OPENAI_API_BASE_URL")
+if not base_url:
+    cfg = load_config()
+    base_url = cfg.get("base_url", "")
+
 
 def initialize_agent(load_history=True):
     """Initialize the agent and managers."""
-    global chat_history_manager, todo_manager, agent, project_root, partial_images
+    global chat_history_manager, todo_manager, agent, project_root, partial_images, api_key, base_url
     
     chat_history_manager = ChatHistoryManager()
     todo_manager = TodoManager()
@@ -131,6 +144,8 @@ def initialize_agent(load_history=True):
     )
     
     agent = Agent(
+        api_key=api_key,
+        base_url=base_url,
         name=agent_name,
         tools=selected_tools,
         user_id=user_id,
@@ -140,20 +155,24 @@ def initialize_agent(load_history=True):
 
 def process_message(user_input_text, screenshots_b64=None, max_turns=None):
     """Process a message and return the event stream."""
+    global agent, chat_history_manager
+
     if max_turns is None:
         max_turns = config.MAX_TURNS
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     formatted_input = f"> **Timestamp:** `{timestamp}`\nUser's input: {user_input_text}"
     
-    # Start the agent run with text and optional screenshots
-    stream = agent.run(
-        message=formatted_input,
-        input_messages=chat_history_manager.get_history(),
-        max_turns=max_turns,
-        screenshots_b64=screenshots_b64,  # Pass list of screenshots to agent
-    )
-    
-    return stream
+    if agent.client:
+        # Start the agent run with text and optional screenshots
+        stream = agent.run(
+            message=formatted_input,
+            input_messages=chat_history_manager.get_history(),
+            max_turns=max_turns,
+            screenshots_b64=screenshots_b64,  # Pass list of screenshots to agent
+        )
+        return stream
+    else:
+        return None
 
 
 def handle_event(event, interactive_mode=True):
@@ -266,8 +285,10 @@ def run_interactive():
         
         # Process message and handle events
         stream = process_message(user_input)
-        for event in stream:
-            handle_event(event, interactive_mode=True)
+
+        if stream:
+            for event in stream:
+                handle_event(event, interactive_mode=True)
 
 
 def run_service(port=None):
@@ -282,10 +303,8 @@ def run_service(port=None):
     
     # Initialize agent on startup with history loaded
     initialize_agent(load_history=True)
-    
-    class ChatRequest(BaseModel):
-        message: str
-        max_turns: int = config.MAX_TURNS
+
+    print("Agent service initialized.")
     
     @app.get("/health")
     def health():
@@ -304,6 +323,35 @@ def run_service(port=None):
             chat_history_manager.clear_generated_images()
             todo_manager.clear_todos()
             return {"status": "ok", "message": "Chat history cleared"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        
+    @app.put("/settings/base_url")
+    def update_base_url():
+        """Signal that the base URL has been updated."""
+        try:
+            global base_url, agent
+            cfg = load_config()
+            existing_base_url = cfg.get("base_url", "")
+            if existing_base_url:
+                base_url = existing_base_url
+            agent.update_client(base_url=base_url)
+            print(f"Updated base URL to: {base_url}")
+            return {"status": "ok", "message": "Base URL updated"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        
+    @app.put("/settings/api_key")
+    def update_api_key():
+        """Signal that the API key has been updated."""
+        try:
+            global api_key, agent
+            existing_token = get_secret("api_token")
+            if existing_token:
+                api_key = existing_token
+            agent.update_client(api_key=api_key)
+            print(f"Updated API key to: ****{existing_token[-4:]}")
+            return {"status": "ok", "message": "API key updated"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
@@ -360,17 +408,18 @@ def run_service(port=None):
                         # Use asyncio to avoid blocking the event loop
                         stream = process_message(message, screenshots_b64, max_turns)
                         
-                        # Iterate through events and yield control to event loop
-                        for event in stream:
-                            # Handle the event (saves history, images, etc.)
-                            handle_event(event, interactive_mode=False)
-                            
-                            # Stream event to client
-                            serialized_event = make_serializable(event)
-                            await websocket.send_json(serialized_event)
-                            
-                            # Yield control to event loop to handle ping/pong
-                            await asyncio.sleep(0)
+                        if stream:
+                            # Iterate through events and yield control to event loop
+                            for event in stream:
+                                # Handle the event (saves history, images, etc.)
+                                handle_event(event, interactive_mode=False)
+                                
+                                # Stream event to client
+                                serialized_event = make_serializable(event)
+                                await websocket.send_json(serialized_event)
+                                
+                                # Yield control to event loop to handle ping/pong
+                                await asyncio.sleep(0)
                         
                         # Send completion signal
                         await websocket.send_json({"type": "stream.finished"})

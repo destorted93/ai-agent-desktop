@@ -1053,8 +1053,10 @@ class ChatWindow(QWidget):
 
 class SettingsWindow(QDialog):
     """Lightweight settings window to be filled later."""
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, agent_url=None):
         super().__init__(parent)
+        self.agent_url = agent_url or "http://127.0.0.1:6002"
+
         self.setWindowTitle("AI Agent Settings")
         self.setModal(False)
         # Keep it small and simple; can be resized later
@@ -1099,9 +1101,12 @@ class SettingsWindow(QDialog):
         buttons.addWidget(self.close_btn)
         layout.addLayout(buttons)
 
-        # Load existing values
+        # Load base URL and token if existing
         cfg = load_config()
-        self.url_input.setText(cfg.get("base_url", ""))
+        existing_base_url = cfg.get("base_url", "")
+        if existing_base_url:
+            # Set existing URL
+            self.url_input.setText(existing_base_url)
         existing_token = get_secret("api_token")
         if existing_token:
             # Show the token plainly for now (testing/dev UX)
@@ -1116,12 +1121,16 @@ class SettingsWindow(QDialog):
             elif "base_url" in cfg:
                 del cfg["base_url"]
             save_config(cfg)
+            # Notify server to update base URL if needed
+            self.update_base_url()
 
             if token:
                 try:
                     # Overwrite deterministically: delete then set
                     delete_secret("api_token")
                     set_secret("api_token", token)
+                    # Notify server to update API key if needed
+                    self.update_api_key()
                 except Exception as e:
                     QMessageBox.warning(self, "Save Error", f"Failed to store token securely: {e}")
                     return
@@ -1135,6 +1144,38 @@ class SettingsWindow(QDialog):
         self.close_btn.clicked.connect(self.close)
 
         layout.addStretch(1)
+
+    def update_api_key(self):
+        """Send request to server to update API key."""
+        
+        # Send request to server to update API key
+        def _update_api_key():
+            try:
+                response = requests.put(f"{self.agent_url}/settings/api_key", timeout=5)
+                if response.status_code == 200:
+                    print("API key updated on server")
+                else:
+                    print(f"Failed to update API key on server: {response.status_code}")
+            except Exception as e:
+                print(f"Failed to update API key on server: {e}")
+        
+        threading.Thread(target=_update_api_key, daemon=True).start()
+
+    def update_base_url(self):
+        """Send request to server to update base URL."""
+        
+        # Send request to server to update base URL
+        def _update_base_url():
+            try:
+                response = requests.put(f"{self.agent_url}/settings/base_url", timeout=5)
+                if response.status_code == 200:
+                    print("Base URL updated on server")
+                else:
+                    print(f"Failed to update base URL on server: {response.status_code}")
+            except Exception as e:
+                print(f"Failed to update base URL on server: {e}")
+        
+        threading.Thread(target=_update_base_url, daemon=True).start()
 
 
 class Gadget(QWidget):
@@ -1389,7 +1430,7 @@ class Gadget(QWidget):
     def open_settings(self):
         """Open the small settings window (non-modal)."""
         if self.settings_window is None:
-            self.settings_window = SettingsWindow(self)
+            self.settings_window = SettingsWindow(self, agent_url=self.agent_url)
         self.settings_window.show()
         self.settings_window.raise_()
         self.settings_window.activateWindow()
