@@ -9,9 +9,9 @@ AGENT_NAME = "Djasha"
 USER_ID = "user_12345"
 
 # Agent model configuration
-MODEL_NAME = "gpt-5"
+MODEL_NAME = "gpt-5.1"
 TEMPERATURE = 1.0
 REASONING_EFFORT = "low"
 REASONING_SUMMARY = "auto"
-TEXT_VERBOSITY = "medium"
+TEXT_VERBOSITY = "low"
 MAX_TURNS = 32

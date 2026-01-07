@@ -8,6 +8,7 @@ import time
 import signal
 import atexit
 import requests
+from secure_storage import get_secret, load_config
 
 # Store process references
 processes = []
@@ -85,23 +86,6 @@ def start_service(name, cmd, cwd, env_vars=None, wait_for_health=None):
 
 def main():
     """Main launcher function."""
-    # Get API key
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        # Show error dialog if running hidden
-        if sys.platform == 'win32':
-            import ctypes
-            ctypes.windll.user32.MessageBoxW(
-                0,
-                "OPENAI_API_KEY environment variable is not set.\n\n"
-                "Please set it in your system environment variables or run START.bat instead.",
-                "API Key Missing",
-                0x10  # MB_ICONERROR
-            )
-        else:
-            print("Error: OPENAI_API_KEY environment variable is not set!")
-        sys.exit(1)
-    
     script_dir = os.path.dirname(os.path.abspath(__file__))
     transcribe_dir = os.path.join(script_dir, "transcribe")
     agent_dir = os.path.join(script_dir, "agent-main")
@@ -120,7 +104,6 @@ def main():
         [sys.executable, "app.py"],
         transcribe_dir,
         env_vars={
-            "OPENAI_API_KEY": api_key,
             "PORT": str(transcribe_port)
         },
         wait_for_health=f"http://127.0.0.1:{transcribe_port}/health"
@@ -131,7 +114,7 @@ def main():
         "Agent Service",
         [sys.executable, "app.py", "--mode", "service", "--port", str(agent_port)],
         agent_dir,
-        env_vars={"OPENAI_API_KEY": api_key},
+        env_vars={},
         wait_for_health=f"http://127.0.0.1:{agent_port}/health"
     )
     
@@ -145,11 +128,17 @@ def main():
     print("Starting Widget UI...")
     
     # Start widget (foreground - this is the main UI)
+    # Ensure the repo root is importable for shared modules (e.g., secure_storage)
+    repo_root = script_dir
+    existing_pp = os.environ.get("PYTHONPATH", "")
+    new_pp = repo_root if not existing_pp else repo_root + os.pathsep + existing_pp
+
     widget_proc = subprocess.Popen(
         [sys.executable, "widget.py"],
         cwd=widget_dir,
         env={
             **os.environ,
+            "PYTHONPATH": new_pp,
             "TRANSCRIBE_URL": f"http://127.0.0.1:{transcribe_port}/upload",
             "AGENT_URL": f"http://127.0.0.1:{agent_port}"
         }

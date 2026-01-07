@@ -5,13 +5,8 @@ REM Usage: run_services.bat [OPENAI_API_KEY]
 REM Defaults: uses existing OPENAI_API_KEY
 REM Launches: transcribe (6001), agent-main (6002), and widget
 
-set KEY=%~1
-if "%KEY%"=="" set KEY=%OPENAI_API_KEY%
-if "%KEY%"=="" (
-  echo Enter OpenAI API Key:
-  set /p KEY="> "
-)
-set OPENAI_API_KEY=%KEY%
+REM Set PYTHONPATH to project root
+set "PYTHONPATH=%~dp0;"
 
 set TRANSCRIBE_PORT=6001
 set AGENT_PORT=6002
@@ -27,11 +22,11 @@ echo   Starting AI Agent Services
 echo ======================================
 echo.
 echo [1/3] Starting Transcribe Service on port %TRANSCRIBE_PORT%...
-start "Transcribe Service" powershell -NoExit -Command "Set-Location '%TRANSCRIBE_DIR%'; $env:OPENAI_API_KEY='%OPENAI_API_KEY%'; $env:PORT='%TRANSCRIBE_PORT%'; Write-Host 'Transcribe Service - Port %TRANSCRIBE_PORT%' -ForegroundColor Cyan; uvicorn app:app --host 0.0.0.0 --port %TRANSCRIBE_PORT%"
+start "Transcribe Service" powershell -NoExit -Command "Set-Location '%TRANSCRIBE_DIR%'; $env:PORT='%TRANSCRIBE_PORT%'; Write-Host 'Transcribe Service - Port %TRANSCRIBE_PORT%' -ForegroundColor Cyan; uvicorn app:app --host 0.0.0.0 --port %TRANSCRIBE_PORT%"
 
 echo [2/3] Starting Agent Service on port %AGENT_PORT%...
 timeout /t 2 /nobreak >nul
-start "Agent Service" powershell -NoExit -Command "Set-Location '%AGENT_DIR%'; $env:OPENAI_API_KEY='%OPENAI_API_KEY%'; Write-Host 'Agent Service - Port %AGENT_PORT%' -ForegroundColor Green; python app.py --mode service --port %AGENT_PORT%"
+start "Agent Service" powershell -NoExit -Command "Set-Location '%AGENT_DIR%'; Write-Host 'Agent Service - Port %AGENT_PORT%' -ForegroundColor Green; python app.py --mode service --port %AGENT_PORT%"
 
 echo [3/3] Starting Widget...
 timeout /t 3 /nobreak >nul

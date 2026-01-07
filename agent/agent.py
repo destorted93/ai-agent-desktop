@@ -6,20 +6,35 @@ from openai import OpenAI
 from .config import AgentConfig
 
 class Agent:
-    def __init__(self, name, tools, user_id=None, config: Optional[AgentConfig] = None):
+    def __init__(self, api_key, base_url, name, tools, user_id=None, config: Optional[AgentConfig] = None):
         """AI Agent wrapper.
 
         Parameters:
+            api_key: OpenAI API key.
+            base_url: OpenAI API base URL.
             name: Agent display/name identifier.
             tools: Iterable of tool objects exposing a 'schema' attribute and 'run' method.
             user_id: Required unique user identifier (used for caching, etc.).
             config: Optional AgentConfig instance. If omitted, a default AgentConfig() is created.
         """
+        self.api_key = api_key
+        self.base_url = base_url
         self.name = name
         self.tools = tools
         self.user_id = user_id
         self.config = config or AgentConfig()
-        self.client = OpenAI()
+
+        client_kwargs = {}
+        if api_key:
+            client_kwargs["api_key"] = api_key
+        if base_url:
+            client_kwargs["base_url"] = base_url
+
+        if api_key:
+            self.client = OpenAI(**client_kwargs)
+        else:
+            self.client = None
+
         # Use config's system prompt (supports custom template modifications)
         self.instructions = self.config.get_system_prompt(self.name)
         self.tool_schemas = [tool.schema for tool in self.tools]
@@ -40,6 +55,24 @@ class Agent:
 
         if not self.user_id or not isinstance(self.user_id, str):
             raise ValueError("user_id must be a non-empty string.")
+        
+    def update_client(self, api_key: Optional[str] = "", base_url: Optional[str] = ""):
+        """Update the OpenAI client with new API key and/or base URL."""
+
+        self.api_key = api_key
+        self.base_url = base_url
+        
+        client_kwargs = {}
+
+        if api_key:
+            client_kwargs["api_key"] = self.api_key
+        if base_url:
+            client_kwargs["base_url"] = self.base_url
+
+        if api_key:
+            self.client = OpenAI(**client_kwargs)
+        else:
+            self.client = None
 
     def color_text(self, text, color_code):
         # Windows PowerShell supports ANSI escape codes in recent versions
@@ -187,13 +220,10 @@ class Agent:
                             yield {"type": "response.output_item.done", "item": event.item}
                     elif event.type == "response.image_generation_call.generating":
                         yield {"type": "response.image_generation_call.generating"}
-
                     elif event.type == "response.image_generation_call.partial_image":
                         yield {"type": "response.image_generation_call.partial_image", "data": event}
-
                     elif event.type == "response.image_generation_call.completed":
                         yield {"type": "response.image_generation_call.completed", "data": event}
-
                     elif event.type == "response.completed":
                         # Collect token usage for this turn
                         self.token_usage = {

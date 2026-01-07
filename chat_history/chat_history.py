@@ -1,15 +1,20 @@
 import os
 import json
 import uuid
+from pathlib import Path
 from datetime import datetime
 
-CHAT_HISTORY_FILE = os.path.join(os.path.dirname(__file__), 'chat_history.json')
+from secure_storage import app_data_dir, write_encrypted_json, read_encrypted_json
+
 IMAGES_FILE = os.path.join(os.path.dirname(__file__), 'generated_images.json')
+SECURE_CHAT_HISTORY_FILE = app_data_dir() / 'chat_history.enc'
 
 class ChatHistoryManager:
-    def __init__(self, file_path=CHAT_HISTORY_FILE, images_path=IMAGES_FILE):
-        self.file_path = file_path
+    def __init__(self, file_path: str | None = None, images_path: str = IMAGES_FILE):
+        # Always use secure encrypted path
+        self.secure_file_path = Path(SECURE_CHAT_HISTORY_FILE)
         self.images_path = images_path
+
         self.history = self.load_history()
         self.generated_images = self.load_generated_images()
 
@@ -46,32 +51,14 @@ class ChatHistoryManager:
         return [entry['content'] for entry in wrapped_entries]
 
     def load_history(self):
-        """Load history from file. Handles both old and new format."""
-        if os.path.exists(self.file_path):
-            with open(self.file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                
-                # Check if data is already in new wrapped format
-                if data and isinstance(data, list) and len(data) > 0:
-                    first_entry = data[0]
-                    if isinstance(first_entry, dict) and 'id' in first_entry and 'ts' in first_entry and 'content' in first_entry:
-                        # Already in new format
-                        return data
-                    else:
-                        # Old format - migrate to new format
-                        print("Migrating chat history to new wrapped format...")
-                        wrapped_data = [self._wrap_entry(entry) for entry in data]
-                        # Save migrated data
-                        self.history = wrapped_data
-                        self.save_history()
-                        return wrapped_data
-                
-                return data
+        """Load history from secure encrypted file. Return [] if missing."""
+        data = read_encrypted_json(self.secure_file_path)
+        if data and isinstance(data, list):
+            return data
         return []
 
     def save_history(self):
-        with open(self.file_path, 'w', encoding='utf-8') as f:
-            json.dump(self.history, f, ensure_ascii=False, indent=2)
+        write_encrypted_json(self.secure_file_path, self.history)
 
     def get_history(self):
         """Get OpenAI-compatible message list (unwrapped contents)."""
