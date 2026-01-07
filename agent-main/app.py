@@ -326,33 +326,21 @@ def run_service(port=None):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
         
-    @app.put("/settings/base_url")
-    def update_base_url():
-        """Signal that the base URL has been updated."""
+    @app.put("/settings/update")
+    def update_settings():
+        """Signal that the settings have been updated."""
         try:
-            global base_url, agent
+            global api_key, base_url, agent
+
             cfg = load_config()
-            existing_base_url = cfg.get("base_url", "")
-            if existing_base_url:
-                base_url = existing_base_url
-            agent.update_client(base_url=base_url)
-            print(f"Updated base URL to: {base_url}")
-            return {"status": "ok", "message": "Base URL updated"}
+            base_url = cfg.get("base_url", "")
+            api_key = get_secret("api_token")
+
+            agent.update_client(api_key=api_key, base_url=base_url)
+
+            return {"status": "ok", "message": "Settings updated"}
         except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-        
-    @app.put("/settings/api_key")
-    def update_api_key():
-        """Signal that the API key has been updated."""
-        try:
-            global api_key, agent
-            existing_token = get_secret("api_token")
-            if existing_token:
-                api_key = existing_token
-            agent.update_client(api_key=api_key)
-            print(f"Updated API key to: ****{existing_token[-4:]}")
-            return {"status": "ok", "message": "API key updated"}
-        except Exception as e:
+            print(f"Error updating settings: {e}")
             raise HTTPException(status_code=500, detail=str(e))
     
     @app.websocket("/chat/ws")

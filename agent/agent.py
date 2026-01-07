@@ -58,13 +58,15 @@ class Agent:
         
     def update_client(self, api_key: Optional[str] = "", base_url: Optional[str] = ""):
         """Update the OpenAI client with new API key and/or base URL."""
+
+        self.api_key = api_key
+        self.base_url = base_url
+        
         client_kwargs = {}
 
         if api_key:
-            self.api_key = api_key
             client_kwargs["api_key"] = self.api_key
         if base_url:
-            self.base_url = base_url
             client_kwargs["base_url"] = self.base_url
 
         if api_key:

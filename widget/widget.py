@@ -1115,14 +1115,16 @@ class SettingsWindow(QDialog):
         def on_save():
             url = self.url_input.text().strip()
             token = self.token_input.text().strip()
+
+            self.url_input.setText(url)
+            self.token_input.setText(token)
+
             cfg = load_config()
             if url:
                 cfg["base_url"] = url
             elif "base_url" in cfg:
                 del cfg["base_url"]
             save_config(cfg)
-            # Notify server to update base URL if needed
-            self.update_base_url()
 
             if token:
                 try:
@@ -1130,13 +1132,15 @@ class SettingsWindow(QDialog):
                     delete_secret("api_token")
                     set_secret("api_token", token)
                     # Notify server to update API key if needed
-                    self.update_api_key()
                 except Exception as e:
                     QMessageBox.warning(self, "Save Error", f"Failed to store token securely: {e}")
                     return
             else:
                 # Empty input means clear token
                 delete_secret("api_token")
+
+            # Notify server that the settings have changed
+            self.update_settings()
 
             QMessageBox.information(self, "Settings", "Settings saved.")
 
@@ -1145,38 +1149,21 @@ class SettingsWindow(QDialog):
 
         layout.addStretch(1)
 
-    def update_api_key(self):
-        """Send request to server to update API key."""
+    def update_settings(self):
+        """Send request to server to update settings."""
         
-        # Send request to server to update API key
-        def _update_api_key():
+        # Send request to server to update settings
+        def _update_settings():
             try:
-                response = requests.put(f"{self.agent_url}/settings/api_key", timeout=5)
+                response = requests.put(f"{self.agent_url}/settings/update", timeout=5)
                 if response.status_code == 200:
-                    print("API key updated on server")
+                    print("Settings updated on server")
                 else:
-                    print(f"Failed to update API key on server: {response.status_code}")
+                    print(f"Failed to update settings on server: {response.status_code}")
             except Exception as e:
-                print(f"Failed to update API key on server: {e}")
+                print(f"Failed to update settings on server: {e}")
         
-        threading.Thread(target=_update_api_key, daemon=True).start()
-
-    def update_base_url(self):
-        """Send request to server to update base URL."""
-        
-        # Send request to server to update base URL
-        def _update_base_url():
-            try:
-                response = requests.put(f"{self.agent_url}/settings/base_url", timeout=5)
-                if response.status_code == 200:
-                    print("Base URL updated on server")
-                else:
-                    print(f"Failed to update base URL on server: {response.status_code}")
-            except Exception as e:
-                print(f"Failed to update base URL on server: {e}")
-        
-        threading.Thread(target=_update_base_url, daemon=True).start()
-
+        threading.Thread(target=_update_settings, daemon=True).start()
 
 class Gadget(QWidget):
     # Signals for thread-safe UI updates
