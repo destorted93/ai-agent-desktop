@@ -286,7 +286,7 @@ class ChatWindow(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         
-        # Top toolbar with clear button
+        # Top toolbar with chat history dropdown, new chat button, token label, screenshot and clear buttons
         toolbar = QWidget()
         toolbar.setStyleSheet("""
             QWidget {
@@ -296,8 +296,76 @@ class ChatWindow(QWidget):
         """)
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(10, 5, 10, 5)
-        toolbar_layout.addStretch()
-        
+
+        # New chat button (leftmost)
+        self.new_chat_button = QPushButton("+")
+        self.new_chat_button.setToolTip("Start New Chat")
+        self.new_chat_button.setFixedSize(28, 28)
+        self.new_chat_button.setStyleSheet("""
+            QPushButton {
+                background-color: #3d3d3d;
+                color: #4da6ff !important;
+                border: none;
+                border-radius: 6px;
+                font-size: 18px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: #4da6ff;
+                color: white !important;
+            }
+        """)
+        toolbar_layout.addWidget(self.new_chat_button)
+
+        # Chat history dropdown (dummy for now)
+        from PyQt6.QtWidgets import QComboBox
+        self.chat_history_dropdown = QComboBox()
+        self.chat_history_dropdown.setFixedHeight(28)
+        self.chat_history_dropdown.setStyleSheet("""
+            QComboBox {
+                background-color: #23272e;
+                color: #d4d4d4;
+                border: 1px solid #3d3d3d;
+                border-radius: 6px;
+                padding: 2px 8px;
+                font-size: 13px;
+                min-width: 120px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #23272e;
+                color: #d4d4d4;
+                selection-background-color: #4da6ff;
+                selection-color: white;
+            }
+        """)
+        # Dummy chat history entries
+        self.chat_history_dropdown.addItems([
+            "Chat 1",
+            "Chat 2",
+            "Chat 3"
+            ])
+        toolbar_layout.addWidget(self.chat_history_dropdown)
+
+        # Left stretch
+        toolbar_layout.addStretch(1)
+
+        # Token usage label (centered)
+        self.token_label = QLabel("Tokens: 1234 / 8000")
+        self.token_label.setStyleSheet("""
+            QLabel {
+                color: #ffcc00;
+                font-size: 13px;
+                background: transparent;
+                font-weight: bold;
+            }
+        """)
+        self.token_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        toolbar_layout.addWidget(self.token_label)
+
+        # Right stretch
+        toolbar_layout.addStretch(1)
+
+        # Screenshot button (right)
         self.screenshot_button = QPushButton("📸")
         self.screenshot_button.setToolTip("Capture Screenshot")
         self.screenshot_button.setFixedSize(32, 32)
@@ -316,9 +384,9 @@ class ChatWindow(QWidget):
                 color: #4da6ff !important;
             }
         """)
-        
         toolbar_layout.addWidget(self.screenshot_button)
-        
+
+        # Clear chat button (right)
         self.clear_button = QPushButton("🗑️")
         self.clear_button.setToolTip("Clear Chat History")
         self.clear_button.setFixedSize(32, 32)
@@ -337,8 +405,8 @@ class ChatWindow(QWidget):
                 color: #ff6b6b !important;
             }
         """)
-        
         toolbar_layout.addWidget(self.clear_button)
+
         layout.addWidget(toolbar)
         
         # Scrollable chat display
