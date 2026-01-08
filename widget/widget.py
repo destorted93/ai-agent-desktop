@@ -266,6 +266,13 @@ class ChatWindow(QWidget):
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
         self.setWindowTitle("AI Chat")
         self.resize(600, 700)
+
+        # set token counters
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.cached_tokens = 0
+        self.reasoning_tokens = 0
+        self.total_tokens = 0
         
         # Enable drag and drop
         self.setAcceptDrops(True)
@@ -350,7 +357,7 @@ class ChatWindow(QWidget):
         toolbar_layout.addStretch(1)
 
         # Token usage label (centered)
-        self.token_label = QLabel("Tokens: 1234 / 8000")
+        self.token_label = QLabel(f"Tokens - I: {self.input_tokens} | O: {self.output_tokens} | C: {self.cached_tokens} | R: {self.reasoning_tokens} | T: {self.total_tokens}")
         self.token_label.setStyleSheet("""
             QLabel {
                 color: #ffcc00;
@@ -1441,6 +1448,7 @@ class Gadget(QWidget):
         self.main_btn.setText(spinner_chars[self.animation_step])
     
     def show_menu(self):
+        from PyQt6.QtWidgets import QMessageBox
         menu = QMenu(self)
 
         # Language block
@@ -1473,14 +1481,47 @@ class Gadget(QWidget):
         clear_chat_action = QAction("Clear Chat History", self)
         clear_chat_action.triggered.connect(self.clear_chat_all)
         menu.addAction(clear_chat_action)
-        
+
         menu.addSeparator()
         close_action = QAction("Close", self)
         close_action.triggered.connect(self.quit_app)
         menu.addAction(close_action)
 
+        menu.addSeparator()
+        restart_action = QAction("Restart App", self)
+        restart_action.triggered.connect(self.restart_app)
+        menu.addAction(restart_action)
+
         # Show menu below the main button
         menu.exec(self.main_btn.mapToGlobal(self.main_btn.rect().bottomLeft()))
+
+    def restart_app(self):
+        """Restart the entire application by launching the .bat file again."""
+        import subprocess
+        import sys
+        import os
+
+        WIDGET_LAUNCH_MODE = os.environ.get("WIDGET_LAUNCH_MODE", None)
+
+        if WIDGET_LAUNCH_MODE:
+            root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            bat_path = os.path.join(root_dir, f'{WIDGET_LAUNCH_MODE}.bat')
+            bat_path = os.path.abspath(bat_path)
+            # Launch main .bat detached
+            subprocess.Popen(
+                ['cmd.exe', '/c', bat_path],
+                cwd=root_dir,
+                creationflags=subprocess.DETACHED_PROCESS)
+            # Exit current app
+            self.quit_app()
+        else:
+            # pop up message box that restart is not available
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self,
+                "Restart Not Available",
+                "Restart is only available when launched via a .bat file."
+            )
 
     def open_settings(self):
         """Open the small settings window (non-modal)."""
@@ -1650,22 +1691,31 @@ class Gadget(QWidget):
     
     def clear_chat_all(self):
         """Clear chat history both locally and on the server."""
-        # Clear local UI
-        if self.chat_window:
-            self.chat_window.clear_chat()
-        
-        # Send request to server to clear history
-        def _clear_on_server():
-            try:
-                response = requests.delete(f"{self.agent_url}/chat/history", timeout=5)
-                if response.status_code == 200:
-                    print("Chat history cleared on server")
-                else:
-                    print(f"Failed to clear chat history on server: {response.status_code}")
-            except Exception as e:
-                print(f"Failed to clear chat history on server: {e}")
-        
-        threading.Thread(target=_clear_on_server, daemon=True).start()
+
+        reply = QMessageBox.question(
+                self,
+                'Clear Chat History',
+                'Are you sure you want to clear all chat history?\n\nThis action cannot be undone.',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+        if reply == QMessageBox.StandardButton.Yes:
+            # Clear local UI
+            if self.chat_window:
+                self.chat_window.clear_chat()
+            
+            # Send request to server to clear history
+            def _clear_on_server():
+                try:
+                    response = requests.delete(f"{self.agent_url}/chat/history", timeout=5)
+                    if response.status_code == 200:
+                        print("Chat history cleared on server")
+                    else:
+                        print(f"Failed to clear chat history on server: {response.status_code}")
+                except Exception as e:
+                    print(f"Failed to clear chat history on server: {e}")
+            
+            threading.Thread(target=_clear_on_server, daemon=True).start()
     
     def stop_agent_inference(self):
         """Stop the current agent inference."""
@@ -1914,20 +1964,30 @@ class Gadget(QWidget):
             traceback.print_exc()
 
     def quit_app(self):
-        # Ensure audio stream stops before quitting
-        try:
-            if hasattr(self, "stream") and getattr(self, "stream") is not None:
-                try:
-                    self.stream.stop()
-                except Exception:
-                    pass
-        finally:
-            # Close chat window
-            if self.chat_window:
-                self.chat_window.close()
-            app = QApplication.instance()
-            if app is not None:
-                app.quit()
+        """Quit the entire application cleanly."""
+
+        reply = QMessageBox.question(
+                self,
+                'Close Application',
+                'Are you sure you want to close the widget and all services?',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+        if reply == QMessageBox.StandardButton.Yes:
+            # Ensure audio stream stops before quitting
+            try:
+                if hasattr(self, "stream") and getattr(self, "stream") is not None:
+                    try:
+                        self.stream.stop()
+                    except Exception:
+                        pass
+            finally:
+                # Close chat window
+                if self.chat_window:
+                    self.chat_window.close()
+                app = QApplication.instance()
+                if app is not None:
+                    app.quit()
 
     def closeEvent(self, event):
         # Cleanup audio stream on window close via window controls
