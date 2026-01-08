@@ -266,6 +266,16 @@ class ChatWindow(QWidget):
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
         self.setWindowTitle("AI Chat")
         self.resize(600, 700)
+        # Restore last position if available
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        pos = settings.value("chat_window_pos", None)
+        if pos is not None:
+            try:
+                x, y = map(int, str(pos).strip('()').split(','))
+                self.move(x, y)
+            except Exception:
+                pass  # fallback to default position
 
         # set token counters
         self.input_tokens = 0
@@ -1209,9 +1219,34 @@ class ChatWindow(QWidget):
         self.update_screenshots_display()
     
     def closeEvent(self, event):
-        """Override close to just hide the window."""
+        """Override close to just hide the window and save position."""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        pos = self.pos()
+        settings.setValue("chat_window_pos", (pos.x(), pos.y()))
         self.hide()
         event.ignore()
+
+    def hideEvent(self, event):
+        """Save position when hidden."""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        pos = self.pos()
+        settings.setValue("chat_window_pos", (pos.x(), pos.y()))
+        super().hideEvent(event)
+
+    def showEvent(self, event):
+        """Restore position when shown, if available."""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        pos = settings.value("chat_window_pos", None)
+        if pos is not None:
+            try:
+                x, y = map(int, str(pos).strip('()').split(','))
+                self.move(x, y)
+            except Exception:
+                pass
+        super().showEvent(event)
 
 
 class SettingsWindow(QDialog):
@@ -1334,6 +1369,7 @@ class Gadget(QWidget):
     agent_event_received = pyqtSignal(dict)
     transcription_received = pyqtSignal(str)
     
+
     def __init__(self):
         super().__init__()
 
@@ -1345,7 +1381,7 @@ class Gadget(QWidget):
         self.filename = "recording.wav"
         # Language selection (ISO-639-1); default 'en'
         self.selected_language = "en"
-        
+
         # Long press state
         self.press_start_time = None
         self.long_press_threshold = 1000  # 1 second in milliseconds
@@ -1353,22 +1389,22 @@ class Gadget(QWidget):
         self.long_press_timer.setSingleShot(True)
         self.long_press_timer.timeout.connect(self.on_long_press)
         self.ready_to_record = False  # Indicates button held long enough, waiting for release
-        
+
         # Animation state
         self.recording_animation_timer = QTimer()
         self.recording_animation_timer.timeout.connect(self.animate_recording)
         self.animation_step = 0
-        
+
         # Chat window
         self.chat_window = None
         # Settings window (lazy created)
         self.settings_window = None
         self.agent_url = os.environ.get("AGENT_URL", "http://127.0.0.1:6002")
-        
+
         # WebSocket tracking for cancellation
         self.current_websocket = None
         self.stop_requested = False
-        
+
         # Connect signals to slots for thread-safe UI updates
         self.history_loaded.connect(self.display_chat_history)
         self.agent_event_received.connect(self.handle_agent_event)
@@ -1389,7 +1425,7 @@ class Gadget(QWidget):
         # Single unified button
         self.main_btn = QPushButton("🤖")
         self.main_btn.setFixedSize(56, 56)
-        
+
         button_style = """
             QPushButton {
                 background-color: rgba(50, 50, 50, 200);
@@ -1404,10 +1440,10 @@ class Gadget(QWidget):
             }
         """
         self.main_btn.setStyleSheet(button_style)
-        
+
         # Install event filter for custom mouse handling
         self.main_btn.installEventFilter(self)
-        
+
         layout.addWidget(self.main_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # Dragging state
@@ -1416,13 +1452,30 @@ class Gadget(QWidget):
         self._dragging = False
         self._press_global_pos = None
 
-        # Default position (bottom right)
-        screen = QApplication.primaryScreen().availableGeometry()
-        self.adjustSize()
-        self.move(
-            screen.width() - self.width() - 20,
-            screen.height() - self.height() - 40,
-        )
+        # Restore last position if available
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        pos = settings.value("window_pos", None)
+        if pos is not None:
+            try:
+                x, y = map(int, str(pos).strip('()').split(','))
+                self.move(x, y)
+            except Exception:
+                # fallback to default
+                screen = QApplication.primaryScreen().availableGeometry()
+                self.adjustSize()
+                self.move(
+                    screen.width() - self.width() - 20,
+                    screen.height() - self.height() - 40,
+                )
+        else:
+            # Default position (bottom right)
+            screen = QApplication.primaryScreen().availableGeometry()
+            self.adjustSize()
+            self.move(
+                screen.width() - self.width() - 20,
+                screen.height() - self.height() - 40,
+            )
 
     # --- Dragging events ---
     def mousePressEvent(self, event):
@@ -2080,6 +2133,12 @@ class Gadget(QWidget):
                     app.quit()
 
     def closeEvent(self, event):
+        # Save window position
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        pos = self.pos()
+        settings.setValue("window_pos", (pos.x(), pos.y()))
+
         # Cleanup audio stream on window close via window controls
         try:
             if hasattr(self, "stream") and getattr(self, "stream") is not None:
