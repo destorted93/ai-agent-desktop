@@ -587,15 +587,22 @@ class ChatWindow(QWidget):
         self.parent_widget = parent
     
     def add_user_message(self, text):
-        """Add user message to chat (right-aligned, max 80% width)."""
+        """Add user message to chat (right-aligned, max 80% width) with hover actions."""
+        from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QPushButton, QWidget, QLabel
         msg_widget = QWidget()
+        msg_widget.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         msg_layout = QHBoxLayout(msg_widget)
         msg_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         # Spacer for right alignment (20% of width)
         msg_layout.addStretch(1)
-        
+
         # Message box (80% of width)
+        msg_box = QWidget()
+        msg_box_layout = QVBoxLayout(msg_box)
+        msg_box_layout.setContentsMargins(0, 0, 0, 0)
+        msg_box_layout.setSpacing(0)
+
         msg_label = QLabel(text)
         msg_label.setWordWrap(True)
         msg_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -608,9 +615,90 @@ class ChatWindow(QWidget):
                 font-size: 13px;
             }
         """)
-        
-        msg_layout.addWidget(msg_label, 4)  # 4 parts out of 5 (80%)
-        
+        msg_box_layout.addWidget(msg_label)
+
+        # Actions row (hidden by default, shown on hover)
+        actions_row = QWidget()
+        actions_layout = QHBoxLayout(actions_row)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setSpacing(6)
+
+
+        from PyQt6.QtWidgets import QMessageBox
+        def show_action_popup(action_name):
+            # Find the index of this message widget in the chat layout
+            idx = -1
+            for i in range(self.chat_layout.count()):
+                if self.chat_layout.itemAt(i).widget() is msg_widget:
+                    idx = i
+                    break
+            QMessageBox.information(
+                self,
+                f"{action_name} Message",
+                f"Action: {action_name}\nIndex: {idx}\nText: {text}"
+            )
+
+        style_sheet = """
+            QPushButton {
+                background-color: rgba(40, 40, 40, 120);
+                border: none;
+                border-radius: 11px;
+                padding: 0px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #4da6ff;
+            }
+        """
+
+        # Align actions to the right
+        actions_layout.addStretch(1)
+
+        # Use Unicode emoji for more intuitive icons
+        # Copy: 📋, Edit: ✏️, Remove: 🗑️
+        copy_btn = QPushButton("📋")
+        copy_btn.setToolTip("Copy message")
+        copy_btn.setFixedSize(22, 22)
+        copy_btn.setStyleSheet(style_sheet)
+        copy_btn.clicked.connect(lambda: show_action_popup("Copy message"))
+        actions_layout.addWidget(copy_btn)
+
+        edit_btn = QPushButton("✏️")
+        edit_btn.setToolTip("Edit message")
+        edit_btn.setFixedSize(22, 22)
+        edit_btn.setStyleSheet(style_sheet)
+        edit_btn.clicked.connect(lambda: show_action_popup("Edit message"))
+        actions_layout.addWidget(edit_btn)
+
+        remove_btn = QPushButton("🗑️")
+        remove_btn.setToolTip("Remove message")
+        remove_btn.setFixedSize(22, 22)
+        remove_btn.setStyleSheet(style_sheet)
+        remove_btn.clicked.connect(lambda: show_action_popup("Remove message"))
+        actions_layout.addWidget(remove_btn)
+
+        actions_row.hide()
+        msg_box_layout.addWidget(actions_row)
+
+        # Prevent shifting: actions row is always present but hidden, so layout height is stable
+        msg_box.setStyleSheet("""
+            QWidget {
+                margin-bottom: 0px;
+            }
+        """)
+
+        msg_layout.addWidget(msg_box, 4)
+
+        # Hover event handling
+        def eventFilter(obj, event):
+            if event.type() == QEvent.Type.Enter:
+                actions_row.show()
+            elif event.type() == QEvent.Type.Leave:
+                actions_row.hide()
+            return False
+        msg_box.installEventFilter(msg_box)
+        msg_box.eventFilter = eventFilter
+
         self.chat_layout.addWidget(msg_widget)
         self.scroll_to_bottom()
     
@@ -1609,6 +1697,8 @@ class Gadget(QWidget):
         """Display chat history in the chat window."""
         if not self.chat_window:
             return
+        
+        print("Loading chat history...")
         
         self.chat_window.clear_chat()
         
