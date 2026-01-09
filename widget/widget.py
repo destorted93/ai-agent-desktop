@@ -1,4 +1,3 @@
-
 # Put all three controls in the same row
 import sys
 import os
@@ -18,6 +17,7 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QPushButton, QVBoxLayout,
                               QLabel, QFrame, QSizePolicy, QLayout, QDialog, QMessageBox)
 from PyQt6.QtGui import QAction, QTextCursor, QFont, QTextOption, QKeyEvent, QPainter, QColor, QPen, QPixmap
 from PyQt6.QtCore import Qt, QPoint, QEvent, pyqtSignal, QObject, QThread, pyqtSlot, QTimer, QRect, QSize
+from agent_service import AgentService
 
 
 class ScreenshotSelector(QWidget):
@@ -788,16 +788,14 @@ class ChatWindow(QWidget):
         else:
             self.send_message()
     
-    def send_message(self):
+    def send_message(self, text=None):
         """Send message from input field."""
-        text = self.input_field.toPlainText().strip()
-        
-        # Build message with file context if files are attached
-        if self.dropped_files:
-            file_context = "\n\n**Attached files/folders:**\n"
-            for path in self.dropped_files:
-                file_context += f"- `{path}`\n"
-            text = text + file_context if text else file_context.strip()
+
+        # If text is not provided, get it from input field, that means the user clicked send button
+        if text is None:
+            text = self.input_field.toPlainText().strip()
+
+        files_list = self.dropped_files.copy()
         
         # Require either text or screenshots
         if (text or self.screenshots) and self.parent_widget:
@@ -805,7 +803,7 @@ class ChatWindow(QWidget):
             self.clear_attached_files()
             # Pass text and list of screenshot data
             screenshot_data_list = [s["data"] for s in self.screenshots]
-            self.parent_widget.send_to_agent(text, screenshot_data_list)
+            self.parent_widget.send_to_agent(text, files_list, screenshot_data_list)
             # Clear screenshots after sending
             self.clear_all_screenshots()
             # Scroll with longer delay to ensure user message is fully rendered
@@ -1251,9 +1249,10 @@ class ChatWindow(QWidget):
 
 class SettingsWindow(QDialog):
     """Lightweight settings window to be filled later."""
-    def __init__(self, parent=None, agent_url=None):
+    def __init__(self, parent=None, agent_url=None, agent_service=None):
         super().__init__(parent)
         self.agent_url = agent_url or "http://127.0.0.1:6002"
+        self.agent_service = agent_service
 
         self.setWindowTitle("AI Agent Settings")
         self.setModal(False)
@@ -1317,51 +1316,24 @@ class SettingsWindow(QDialog):
             self.url_input.setText(url)
             self.token_input.setText(token)
 
-            cfg = load_config()
-            if url:
-                cfg["base_url"] = url
-            elif "base_url" in cfg:
-                del cfg["base_url"]
-            save_config(cfg)
-
-            if token:
-                try:
-                    # Overwrite deterministically: delete then set
-                    delete_secret("api_token")
-                    set_secret("api_token", token)
-                    # Notify server to update API key if needed
-                except Exception as e:
-                    QMessageBox.warning(self, "Save Error", f"Failed to store token securely: {e}")
-                    return
-            else:
-                # Empty input means clear token
-                delete_secret("api_token")
+            settings = {
+                "base_url": url,
+                "api_token": token,
+            }
 
             # Notify server that the settings have changed
-            self.update_settings()
-
-            QMessageBox.information(self, "Settings", "Settings saved.")
+            if self.agent_service:
+                response = self.agent_service.update_settings(settings)
+                if response:
+                    QMessageBox.information(self, "Settings", "Settings updated on server.")
+                else:
+                    QMessageBox.warning(self, "Settings", "Failed to update settings on server.")
 
         self.save_btn.clicked.connect(on_save)
         self.close_btn.clicked.connect(self.close)
 
         layout.addStretch(1)
-
-    def update_settings(self):
-        """Send request to server to update settings."""
         
-        # Send request to server to update settings
-        def _update_settings():
-            try:
-                response = requests.put(f"{self.agent_url}/settings/update", timeout=5)
-                if response.status_code == 200:
-                    print("Settings updated on server")
-                else:
-                    print(f"Failed to update settings on server: {response.status_code}")
-            except Exception as e:
-                print(f"Failed to update settings on server: {e}")
-        
-        threading.Thread(target=_update_settings, daemon=True).start()
 
 class Gadget(QWidget):
     # Signals for thread-safe UI updates
@@ -1395,8 +1367,12 @@ class Gadget(QWidget):
         self.recording_animation_timer.timeout.connect(self.animate_recording)
         self.animation_step = 0
 
+        # Init AgentService
+        self.agent_service = AgentService()
+
         # Chat window
-        self.chat_window = None
+        self.chat_window = ChatWindow(self)
+        self.chat_window.hide()
         # Settings window (lazy created)
         self.settings_window = None
         self.agent_url = os.environ.get("AGENT_URL", "http://127.0.0.1:6002")
@@ -1408,7 +1384,7 @@ class Gadget(QWidget):
         # Connect signals to slots for thread-safe UI updates
         self.history_loaded.connect(self.display_chat_history)
         self.agent_event_received.connect(self.handle_agent_event)
-        self.transcription_received.connect(self.send_to_agent)
+        self.transcription_received.connect(self.chat_window.send_message)
 
         # Transparent, always-on-top window
         self.setWindowFlags(
@@ -1667,7 +1643,7 @@ class Gadget(QWidget):
     def open_settings(self):
         """Open the small settings window (non-modal)."""
         if self.settings_window is None:
-            self.settings_window = SettingsWindow(self, agent_url=self.agent_url)
+            self.settings_window = SettingsWindow(self, agent_url=self.agent_url, agent_service=self.agent_service)
         self.settings_window.show()
         self.settings_window.raise_()
         self.settings_window.activateWindow()
@@ -1735,14 +1711,11 @@ class Gadget(QWidget):
         """Fetch chat history from agent service and display it."""
         def _fetch():
             try:
-                response = requests.get(f"{self.agent_url}/chat/history", timeout=5)
-                if response.status_code == 200:
-                    history = response.json().get("history", [])
-                    # Emit signal to display on main thread
-                    self.history_loaded.emit(history)
+                history = self.agent_service.get_history(chat_id="default")
+                # Emit signal to display on main thread
+                self.history_loaded.emit(history)
             except Exception as e:
                 print(f"Failed to fetch chat history: {e}")
-        
         threading.Thread(target=_fetch, daemon=True).start()
     
     @pyqtSlot(list)
@@ -1850,14 +1823,13 @@ class Gadget(QWidget):
             # Send request to server to clear history
             def _clear_on_server():
                 try:
-                    response = requests.delete(f"{self.agent_url}/chat/history", timeout=5)
-                    if response.status_code == 200:
+                    success = self.agent_service.clear_history(chat_id="default")
+                    if success:
                         print("Chat history cleared on server")
                     else:
-                        print(f"Failed to clear chat history on server: {response.status_code}")
+                        print(f"Failed to clear chat history on server")
                 except Exception as e:
                     print(f"Failed to clear chat history on server: {e}")
-            
             threading.Thread(target=_clear_on_server, daemon=True).start()
     
     def stop_agent_inference(self):
@@ -1885,19 +1857,10 @@ class Gadget(QWidget):
             except Exception as e:
                 print(f"Error sending stop signal: {e}")
     
-    def send_to_agent(self, text, screenshots_data=None):
+    def send_to_agent(self, text, files_list=None, screenshots_data=None):
         """Send text and optional screenshots to the agent service and handle streaming response via WebSocket."""
         if not self.chat_window:
             return
-        
-        # Build message with file context if files are attached (same as manual send)
-        if self.chat_window.dropped_files:
-            file_context = "\n\n**Attached files/folders:**\n"
-            for path in self.chat_window.dropped_files:
-                file_context += f"- `{path}`\n"
-            text = text + file_context if text else file_context.strip()
-            # Clear attached files after including them
-            self.chat_window.clear_attached_files()
         
         # Add user message to chat (with file context if any)
         display_text = text if text else f"[{len(screenshots_data) if screenshots_data else 0} Screenshot(s)]"
@@ -1915,7 +1878,7 @@ class Gadget(QWidget):
             asyncio.set_event_loop(loop)
             
             try:
-                loop.run_until_complete(self._websocket_stream(text, screenshots_data))
+                loop.run_until_complete(self._websocket_stream(text, files_list, screenshots_data))
             except Exception as e:
                 print(f"Error in websocket stream: {e}")
                 traceback.print_exc()
@@ -1929,7 +1892,7 @@ class Gadget(QWidget):
         
         threading.Thread(target=_stream, daemon=True).start()
     
-    async def _websocket_stream(self, text, screenshots_data=None):
+    async def _websocket_stream(self, text, files_list=None, screenshots_data=None):
         """Handle WebSocket streaming communication with chunked screenshot sending."""
         # Convert http:// to ws://
         ws_url = self.agent_url.replace("http://", "ws://").replace("https://", "wss://")
@@ -1952,6 +1915,7 @@ class Gadget(QWidget):
                 payload = {
                     "type": "message",
                     "message": text,
+                    "files": files_list or [],
                     "has_screenshots": bool(screenshots_data),
                     "screenshot_count": len(screenshots_data) if screenshots_data else 0
                 }
@@ -2146,10 +2110,12 @@ class Gadget(QWidget):
                     self.stream.stop()
                 except Exception:
                     pass
-        finally:
             # Close chat window
             if self.chat_window:
                 self.chat_window.close()
+            event.accept()
+        except Exception as e:
+            print(f"Error during closeEvent: {e}")
             event.accept()
 
     # --- Recording logic ---
@@ -2268,7 +2234,6 @@ class Gadget(QWidget):
                 print("Upload failed:", e)
 
         threading.Thread(target=_send, daemon=True).start()
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
