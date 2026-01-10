@@ -1,4 +1,3 @@
-
 # Put all three controls in the same row
 import sys
 import os
@@ -18,6 +17,7 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QPushButton, QVBoxLayout,
                               QLabel, QFrame, QSizePolicy, QLayout, QDialog, QMessageBox)
 from PyQt6.QtGui import QAction, QTextCursor, QFont, QTextOption, QKeyEvent, QPainter, QColor, QPen, QPixmap
 from PyQt6.QtCore import Qt, QPoint, QEvent, pyqtSignal, QObject, QThread, pyqtSlot, QTimer, QRect, QSize
+from agent_service import AgentService
 
 
 class ScreenshotSelector(QWidget):
@@ -266,6 +266,23 @@ class ChatWindow(QWidget):
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
         self.setWindowTitle("AI Chat")
         self.resize(600, 700)
+        # Restore last position if available
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        pos = settings.value("chat_window_pos", None)
+        if pos is not None:
+            try:
+                x, y = map(int, str(pos).strip('()').split(','))
+                self.move(x, y)
+            except Exception:
+                pass  # fallback to default position
+
+        # set token counters
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.cached_tokens = 0
+        self.reasoning_tokens = 0
+        self.total_tokens = 0
         
         # Enable drag and drop
         self.setAcceptDrops(True)
@@ -286,7 +303,7 @@ class ChatWindow(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         
-        # Top toolbar with clear button
+        # Top toolbar with chat history dropdown, new chat button, token label, screenshot and clear buttons
         toolbar = QWidget()
         toolbar.setStyleSheet("""
             QWidget {
@@ -296,8 +313,76 @@ class ChatWindow(QWidget):
         """)
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(10, 5, 10, 5)
-        toolbar_layout.addStretch()
-        
+
+        # New chat button (leftmost)
+        self.new_chat_button = QPushButton("+")
+        self.new_chat_button.setToolTip("Start New Chat")
+        self.new_chat_button.setFixedSize(28, 28)
+        self.new_chat_button.setStyleSheet("""
+            QPushButton {
+                background-color: #3d3d3d;
+                color: #4da6ff !important;
+                border: none;
+                border-radius: 6px;
+                font-size: 18px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: #4da6ff;
+                color: white !important;
+            }
+        """)
+        toolbar_layout.addWidget(self.new_chat_button)
+
+        # Chat history dropdown (dummy for now)
+        from PyQt6.QtWidgets import QComboBox
+        self.chat_history_dropdown = QComboBox()
+        self.chat_history_dropdown.setFixedHeight(28)
+        self.chat_history_dropdown.setStyleSheet("""
+            QComboBox {
+                background-color: #23272e;
+                color: #d4d4d4;
+                border: 1px solid #3d3d3d;
+                border-radius: 6px;
+                padding: 2px 8px;
+                font-size: 13px;
+                min-width: 120px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #23272e;
+                color: #d4d4d4;
+                selection-background-color: #4da6ff;
+                selection-color: white;
+            }
+        """)
+        # Dummy chat history entries
+        self.chat_history_dropdown.addItems([
+            "Chat 1",
+            "Chat 2",
+            "Chat 3"
+            ])
+        toolbar_layout.addWidget(self.chat_history_dropdown)
+
+        # Left stretch
+        toolbar_layout.addStretch(1)
+
+        # Token usage label (centered)
+        self.token_label = QLabel(f"Tokens - I: {self.input_tokens} | O: {self.output_tokens} | C: {self.cached_tokens} | R: {self.reasoning_tokens} | T: {self.total_tokens}")
+        self.token_label.setStyleSheet("""
+            QLabel {
+                color: #ffcc00;
+                font-size: 13px;
+                background: transparent;
+                font-weight: bold;
+            }
+        """)
+        self.token_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        toolbar_layout.addWidget(self.token_label)
+
+        # Right stretch
+        toolbar_layout.addStretch(1)
+
+        # Screenshot button (right)
         self.screenshot_button = QPushButton("📸")
         self.screenshot_button.setToolTip("Capture Screenshot")
         self.screenshot_button.setFixedSize(32, 32)
@@ -316,9 +401,9 @@ class ChatWindow(QWidget):
                 color: #4da6ff !important;
             }
         """)
-        
         toolbar_layout.addWidget(self.screenshot_button)
-        
+
+        # Clear chat button (right)
         self.clear_button = QPushButton("🗑️")
         self.clear_button.setToolTip("Clear Chat History")
         self.clear_button.setFixedSize(32, 32)
@@ -337,8 +422,8 @@ class ChatWindow(QWidget):
                 color: #ff6b6b !important;
             }
         """)
-        
         toolbar_layout.addWidget(self.clear_button)
+
         layout.addWidget(toolbar)
         
         # Scrollable chat display
@@ -512,15 +597,22 @@ class ChatWindow(QWidget):
         self.parent_widget = parent
     
     def add_user_message(self, text):
-        """Add user message to chat (right-aligned, max 80% width)."""
+        """Add user message to chat (right-aligned, max 80% width) with hover actions."""
+        from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QPushButton, QWidget, QLabel
         msg_widget = QWidget()
+        msg_widget.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         msg_layout = QHBoxLayout(msg_widget)
         msg_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         # Spacer for right alignment (20% of width)
         msg_layout.addStretch(1)
-        
+
         # Message box (80% of width)
+        msg_box = QWidget()
+        msg_box_layout = QVBoxLayout(msg_box)
+        msg_box_layout.setContentsMargins(0, 0, 0, 0)
+        msg_box_layout.setSpacing(0)
+
         msg_label = QLabel(text)
         msg_label.setWordWrap(True)
         msg_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -533,9 +625,90 @@ class ChatWindow(QWidget):
                 font-size: 13px;
             }
         """)
-        
-        msg_layout.addWidget(msg_label, 4)  # 4 parts out of 5 (80%)
-        
+        msg_box_layout.addWidget(msg_label)
+
+        # Actions row (hidden by default, shown on hover)
+        actions_row = QWidget()
+        actions_layout = QHBoxLayout(actions_row)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setSpacing(6)
+
+
+        from PyQt6.QtWidgets import QMessageBox
+        def show_action_popup(action_name):
+            # Find the index of this message widget in the chat layout
+            idx = -1
+            for i in range(self.chat_layout.count()):
+                if self.chat_layout.itemAt(i).widget() is msg_widget:
+                    idx = i
+                    break
+            QMessageBox.information(
+                self,
+                f"{action_name} Message",
+                f"Action: {action_name}\nIndex: {idx}\nText: {text}"
+            )
+
+        style_sheet = """
+            QPushButton {
+                background-color: rgba(40, 40, 40, 120);
+                border: none;
+                border-radius: 11px;
+                padding: 0px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #4da6ff;
+            }
+        """
+
+        # Align actions to the right
+        actions_layout.addStretch(1)
+
+        # Use Unicode emoji for more intuitive icons
+        # Copy: 📋, Edit: ✏️, Remove: 🗑️
+        copy_btn = QPushButton("📋")
+        copy_btn.setToolTip("Copy message")
+        copy_btn.setFixedSize(22, 22)
+        copy_btn.setStyleSheet(style_sheet)
+        copy_btn.clicked.connect(lambda: show_action_popup("Copy message"))
+        actions_layout.addWidget(copy_btn)
+
+        edit_btn = QPushButton("✏️")
+        edit_btn.setToolTip("Edit message")
+        edit_btn.setFixedSize(22, 22)
+        edit_btn.setStyleSheet(style_sheet)
+        edit_btn.clicked.connect(lambda: show_action_popup("Edit message"))
+        actions_layout.addWidget(edit_btn)
+
+        remove_btn = QPushButton("🗑️")
+        remove_btn.setToolTip("Remove message")
+        remove_btn.setFixedSize(22, 22)
+        remove_btn.setStyleSheet(style_sheet)
+        remove_btn.clicked.connect(lambda: show_action_popup("Remove message"))
+        actions_layout.addWidget(remove_btn)
+
+        actions_row.hide()
+        msg_box_layout.addWidget(actions_row)
+
+        # Prevent shifting: actions row is always present but hidden, so layout height is stable
+        msg_box.setStyleSheet("""
+            QWidget {
+                margin-bottom: 0px;
+            }
+        """)
+
+        msg_layout.addWidget(msg_box, 4)
+
+        # Hover event handling
+        def eventFilter(obj, event):
+            if event.type() == QEvent.Type.Enter:
+                actions_row.show()
+            elif event.type() == QEvent.Type.Leave:
+                actions_row.hide()
+            return False
+        msg_box.installEventFilter(msg_box)
+        msg_box.eventFilter = eventFilter
+
         self.chat_layout.addWidget(msg_widget)
         self.scroll_to_bottom()
     
@@ -615,16 +788,14 @@ class ChatWindow(QWidget):
         else:
             self.send_message()
     
-    def send_message(self):
+    def send_message(self, text=None):
         """Send message from input field."""
-        text = self.input_field.toPlainText().strip()
-        
-        # Build message with file context if files are attached
-        if self.dropped_files:
-            file_context = "\n\n**Attached files/folders:**\n"
-            for path in self.dropped_files:
-                file_context += f"- `{path}`\n"
-            text = text + file_context if text else file_context.strip()
+
+        # If text is not provided, get it from input field, that means the user clicked send button
+        if text is None:
+            text = self.input_field.toPlainText().strip()
+
+        files_list = self.dropped_files.copy()
         
         # Require either text or screenshots
         if (text or self.screenshots) and self.parent_widget:
@@ -632,7 +803,7 @@ class ChatWindow(QWidget):
             self.clear_attached_files()
             # Pass text and list of screenshot data
             screenshot_data_list = [s["data"] for s in self.screenshots]
-            self.parent_widget.send_to_agent(text, screenshot_data_list)
+            self.parent_widget.send_to_agent(text, files_list, screenshot_data_list)
             # Clear screenshots after sending
             self.clear_all_screenshots()
             # Scroll with longer delay to ensure user message is fully rendered
@@ -1046,16 +1217,42 @@ class ChatWindow(QWidget):
         self.update_screenshots_display()
     
     def closeEvent(self, event):
-        """Override close to just hide the window."""
+        """Override close to just hide the window and save position."""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        pos = self.pos()
+        settings.setValue("chat_window_pos", (pos.x(), pos.y()))
         self.hide()
         event.ignore()
+
+    def hideEvent(self, event):
+        """Save position when hidden."""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        pos = self.pos()
+        settings.setValue("chat_window_pos", (pos.x(), pos.y()))
+        super().hideEvent(event)
+
+    def showEvent(self, event):
+        """Restore position when shown, if available."""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        pos = settings.value("chat_window_pos", None)
+        if pos is not None:
+            try:
+                x, y = map(int, str(pos).strip('()').split(','))
+                self.move(x, y)
+            except Exception:
+                pass
+        super().showEvent(event)
 
 
 class SettingsWindow(QDialog):
     """Lightweight settings window to be filled later."""
-    def __init__(self, parent=None, agent_url=None):
+    def __init__(self, parent=None, agent_url=None, agent_service=None):
         super().__init__(parent)
         self.agent_url = agent_url or "http://127.0.0.1:6002"
+        self.agent_service = agent_service
 
         self.setWindowTitle("AI Agent Settings")
         self.setModal(False)
@@ -1119,51 +1316,24 @@ class SettingsWindow(QDialog):
             self.url_input.setText(url)
             self.token_input.setText(token)
 
-            cfg = load_config()
-            if url:
-                cfg["base_url"] = url
-            elif "base_url" in cfg:
-                del cfg["base_url"]
-            save_config(cfg)
-
-            if token:
-                try:
-                    # Overwrite deterministically: delete then set
-                    delete_secret("api_token")
-                    set_secret("api_token", token)
-                    # Notify server to update API key if needed
-                except Exception as e:
-                    QMessageBox.warning(self, "Save Error", f"Failed to store token securely: {e}")
-                    return
-            else:
-                # Empty input means clear token
-                delete_secret("api_token")
+            settings = {
+                "base_url": url,
+                "api_token": token,
+            }
 
             # Notify server that the settings have changed
-            self.update_settings()
-
-            QMessageBox.information(self, "Settings", "Settings saved.")
+            if self.agent_service:
+                response = self.agent_service.update_settings(settings)
+                if response:
+                    QMessageBox.information(self, "Settings", "Settings updated on server.")
+                else:
+                    QMessageBox.warning(self, "Settings", "Failed to update settings on server.")
 
         self.save_btn.clicked.connect(on_save)
         self.close_btn.clicked.connect(self.close)
 
         layout.addStretch(1)
-
-    def update_settings(self):
-        """Send request to server to update settings."""
         
-        # Send request to server to update settings
-        def _update_settings():
-            try:
-                response = requests.put(f"{self.agent_url}/settings/update", timeout=5)
-                if response.status_code == 200:
-                    print("Settings updated on server")
-                else:
-                    print(f"Failed to update settings on server: {response.status_code}")
-            except Exception as e:
-                print(f"Failed to update settings on server: {e}")
-        
-        threading.Thread(target=_update_settings, daemon=True).start()
 
 class Gadget(QWidget):
     # Signals for thread-safe UI updates
@@ -1171,6 +1341,7 @@ class Gadget(QWidget):
     agent_event_received = pyqtSignal(dict)
     transcription_received = pyqtSignal(str)
     
+
     def __init__(self):
         super().__init__()
 
@@ -1182,7 +1353,7 @@ class Gadget(QWidget):
         self.filename = "recording.wav"
         # Language selection (ISO-639-1); default 'en'
         self.selected_language = "en"
-        
+
         # Long press state
         self.press_start_time = None
         self.long_press_threshold = 1000  # 1 second in milliseconds
@@ -1190,26 +1361,30 @@ class Gadget(QWidget):
         self.long_press_timer.setSingleShot(True)
         self.long_press_timer.timeout.connect(self.on_long_press)
         self.ready_to_record = False  # Indicates button held long enough, waiting for release
-        
+
         # Animation state
         self.recording_animation_timer = QTimer()
         self.recording_animation_timer.timeout.connect(self.animate_recording)
         self.animation_step = 0
-        
+
+        # Init AgentService
+        self.agent_service = AgentService()
+
         # Chat window
-        self.chat_window = None
+        self.chat_window = ChatWindow(self)
+        self.chat_window.hide()
         # Settings window (lazy created)
         self.settings_window = None
         self.agent_url = os.environ.get("AGENT_URL", "http://127.0.0.1:6002")
-        
+
         # WebSocket tracking for cancellation
         self.current_websocket = None
         self.stop_requested = False
-        
+
         # Connect signals to slots for thread-safe UI updates
         self.history_loaded.connect(self.display_chat_history)
         self.agent_event_received.connect(self.handle_agent_event)
-        self.transcription_received.connect(self.send_to_agent)
+        self.transcription_received.connect(self.chat_window.send_message)
 
         # Transparent, always-on-top window
         self.setWindowFlags(
@@ -1226,7 +1401,7 @@ class Gadget(QWidget):
         # Single unified button
         self.main_btn = QPushButton("🤖")
         self.main_btn.setFixedSize(56, 56)
-        
+
         button_style = """
             QPushButton {
                 background-color: rgba(50, 50, 50, 200);
@@ -1241,10 +1416,10 @@ class Gadget(QWidget):
             }
         """
         self.main_btn.setStyleSheet(button_style)
-        
+
         # Install event filter for custom mouse handling
         self.main_btn.installEventFilter(self)
-        
+
         layout.addWidget(self.main_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # Dragging state
@@ -1253,13 +1428,30 @@ class Gadget(QWidget):
         self._dragging = False
         self._press_global_pos = None
 
-        # Default position (bottom right)
-        screen = QApplication.primaryScreen().availableGeometry()
-        self.adjustSize()
-        self.move(
-            screen.width() - self.width() - 20,
-            screen.height() - self.height() - 40,
-        )
+        # Restore last position if available
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        pos = settings.value("window_pos", None)
+        if pos is not None:
+            try:
+                x, y = map(int, str(pos).strip('()').split(','))
+                self.move(x, y)
+            except Exception:
+                # fallback to default
+                screen = QApplication.primaryScreen().availableGeometry()
+                self.adjustSize()
+                self.move(
+                    screen.width() - self.width() - 20,
+                    screen.height() - self.height() - 40,
+                )
+        else:
+            # Default position (bottom right)
+            screen = QApplication.primaryScreen().availableGeometry()
+            self.adjustSize()
+            self.move(
+                screen.width() - self.width() - 20,
+                screen.height() - self.height() - 40,
+            )
 
     # --- Dragging events ---
     def mousePressEvent(self, event):
@@ -1373,6 +1565,7 @@ class Gadget(QWidget):
         self.main_btn.setText(spinner_chars[self.animation_step])
     
     def show_menu(self):
+        from PyQt6.QtWidgets import QMessageBox
         menu = QMenu(self)
 
         # Language block
@@ -1405,19 +1598,52 @@ class Gadget(QWidget):
         clear_chat_action = QAction("Clear Chat History", self)
         clear_chat_action.triggered.connect(self.clear_chat_all)
         menu.addAction(clear_chat_action)
-        
+
         menu.addSeparator()
         close_action = QAction("Close", self)
         close_action.triggered.connect(self.quit_app)
         menu.addAction(close_action)
 
+        menu.addSeparator()
+        restart_action = QAction("Restart App", self)
+        restart_action.triggered.connect(self.restart_app)
+        menu.addAction(restart_action)
+
         # Show menu below the main button
         menu.exec(self.main_btn.mapToGlobal(self.main_btn.rect().bottomLeft()))
+
+    def restart_app(self):
+        """Restart the entire application by launching the .bat file again."""
+        import subprocess
+        import sys
+        import os
+
+        WIDGET_LAUNCH_MODE = os.environ.get("WIDGET_LAUNCH_MODE", None)
+
+        if WIDGET_LAUNCH_MODE:
+            root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            bat_path = os.path.join(root_dir, f'{WIDGET_LAUNCH_MODE}.bat')
+            bat_path = os.path.abspath(bat_path)
+            # Launch main .bat detached
+            subprocess.Popen(
+                ['cmd.exe', '/c', bat_path],
+                cwd=root_dir,
+                creationflags=subprocess.DETACHED_PROCESS)
+            # Exit current app
+            self.quit_app()
+        else:
+            # pop up message box that restart is not available
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self,
+                "Restart Not Available",
+                "Restart is only available when launched via a .bat file."
+            )
 
     def open_settings(self):
         """Open the small settings window (non-modal)."""
         if self.settings_window is None:
-            self.settings_window = SettingsWindow(self, agent_url=self.agent_url)
+            self.settings_window = SettingsWindow(self, agent_url=self.agent_url, agent_service=self.agent_service)
         self.settings_window.show()
         self.settings_window.raise_()
         self.settings_window.activateWindow()
@@ -1485,14 +1711,11 @@ class Gadget(QWidget):
         """Fetch chat history from agent service and display it."""
         def _fetch():
             try:
-                response = requests.get(f"{self.agent_url}/chat/history", timeout=5)
-                if response.status_code == 200:
-                    history = response.json().get("history", [])
-                    # Emit signal to display on main thread
-                    self.history_loaded.emit(history)
+                history = self.agent_service.get_history(chat_id="default")
+                # Emit signal to display on main thread
+                self.history_loaded.emit(history)
             except Exception as e:
                 print(f"Failed to fetch chat history: {e}")
-        
         threading.Thread(target=_fetch, daemon=True).start()
     
     @pyqtSlot(list)
@@ -1500,6 +1723,8 @@ class Gadget(QWidget):
         """Display chat history in the chat window."""
         if not self.chat_window:
             return
+        
+        print("Loading chat history...")
         
         self.chat_window.clear_chat()
         
@@ -1582,22 +1807,30 @@ class Gadget(QWidget):
     
     def clear_chat_all(self):
         """Clear chat history both locally and on the server."""
-        # Clear local UI
-        if self.chat_window:
-            self.chat_window.clear_chat()
-        
-        # Send request to server to clear history
-        def _clear_on_server():
-            try:
-                response = requests.delete(f"{self.agent_url}/chat/history", timeout=5)
-                if response.status_code == 200:
-                    print("Chat history cleared on server")
-                else:
-                    print(f"Failed to clear chat history on server: {response.status_code}")
-            except Exception as e:
-                print(f"Failed to clear chat history on server: {e}")
-        
-        threading.Thread(target=_clear_on_server, daemon=True).start()
+
+        reply = QMessageBox.question(
+                self,
+                'Clear Chat History',
+                'Are you sure you want to clear all chat history?\n\nThis action cannot be undone.',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+        if reply == QMessageBox.StandardButton.Yes:
+            # Clear local UI
+            if self.chat_window:
+                self.chat_window.clear_chat()
+            
+            # Send request to server to clear history
+            def _clear_on_server():
+                try:
+                    success = self.agent_service.clear_history(chat_id="default")
+                    if success:
+                        print("Chat history cleared on server")
+                    else:
+                        print(f"Failed to clear chat history on server")
+                except Exception as e:
+                    print(f"Failed to clear chat history on server: {e}")
+            threading.Thread(target=_clear_on_server, daemon=True).start()
     
     def stop_agent_inference(self):
         """Stop the current agent inference."""
@@ -1624,19 +1857,10 @@ class Gadget(QWidget):
             except Exception as e:
                 print(f"Error sending stop signal: {e}")
     
-    def send_to_agent(self, text, screenshots_data=None):
+    def send_to_agent(self, text, files_list=None, screenshots_data=None):
         """Send text and optional screenshots to the agent service and handle streaming response via WebSocket."""
         if not self.chat_window:
             return
-        
-        # Build message with file context if files are attached (same as manual send)
-        if self.chat_window.dropped_files:
-            file_context = "\n\n**Attached files/folders:**\n"
-            for path in self.chat_window.dropped_files:
-                file_context += f"- `{path}`\n"
-            text = text + file_context if text else file_context.strip()
-            # Clear attached files after including them
-            self.chat_window.clear_attached_files()
         
         # Add user message to chat (with file context if any)
         display_text = text if text else f"[{len(screenshots_data) if screenshots_data else 0} Screenshot(s)]"
@@ -1654,7 +1878,7 @@ class Gadget(QWidget):
             asyncio.set_event_loop(loop)
             
             try:
-                loop.run_until_complete(self._websocket_stream(text, screenshots_data))
+                loop.run_until_complete(self._websocket_stream(text, files_list, screenshots_data))
             except Exception as e:
                 print(f"Error in websocket stream: {e}")
                 traceback.print_exc()
@@ -1668,7 +1892,7 @@ class Gadget(QWidget):
         
         threading.Thread(target=_stream, daemon=True).start()
     
-    async def _websocket_stream(self, text, screenshots_data=None):
+    async def _websocket_stream(self, text, files_list=None, screenshots_data=None):
         """Handle WebSocket streaming communication with chunked screenshot sending."""
         # Convert http:// to ws://
         ws_url = self.agent_url.replace("http://", "ws://").replace("https://", "wss://")
@@ -1691,6 +1915,7 @@ class Gadget(QWidget):
                 payload = {
                     "type": "message",
                     "message": text,
+                    "files": files_list or [],
                     "has_screenshots": bool(screenshots_data),
                     "screenshot_count": len(screenshots_data) if screenshots_data else 0
                 }
@@ -1846,22 +2071,38 @@ class Gadget(QWidget):
             traceback.print_exc()
 
     def quit_app(self):
-        # Ensure audio stream stops before quitting
-        try:
-            if hasattr(self, "stream") and getattr(self, "stream") is not None:
-                try:
-                    self.stream.stop()
-                except Exception:
-                    pass
-        finally:
-            # Close chat window
-            if self.chat_window:
-                self.chat_window.close()
-            app = QApplication.instance()
-            if app is not None:
-                app.quit()
+        """Quit the entire application cleanly."""
+
+        reply = QMessageBox.question(
+                self,
+                'Close Application',
+                'Are you sure you want to close the widget and all services?',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+        if reply == QMessageBox.StandardButton.Yes:
+            # Ensure audio stream stops before quitting
+            try:
+                if hasattr(self, "stream") and getattr(self, "stream") is not None:
+                    try:
+                        self.stream.stop()
+                    except Exception:
+                        pass
+            finally:
+                # Close chat window
+                if self.chat_window:
+                    self.chat_window.close()
+                app = QApplication.instance()
+                if app is not None:
+                    app.quit()
 
     def closeEvent(self, event):
+        # Save window position
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        pos = self.pos()
+        settings.setValue("window_pos", (pos.x(), pos.y()))
+
         # Cleanup audio stream on window close via window controls
         try:
             if hasattr(self, "stream") and getattr(self, "stream") is not None:
@@ -1869,10 +2110,12 @@ class Gadget(QWidget):
                     self.stream.stop()
                 except Exception:
                     pass
-        finally:
             # Close chat window
             if self.chat_window:
                 self.chat_window.close()
+            event.accept()
+        except Exception as e:
+            print(f"Error during closeEvent: {e}")
             event.accept()
 
     # --- Recording logic ---
@@ -1991,7 +2234,6 @@ class Gadget(QWidget):
                 print("Upload failed:", e)
 
         threading.Thread(target=_send, daemon=True).start()
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

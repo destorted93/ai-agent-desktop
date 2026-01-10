@@ -60,7 +60,7 @@ class ChatHistoryManager:
     def save_history(self):
         write_encrypted_json(self.secure_file_path, self.history)
 
-    def get_history(self):
+    def get_history(self, chat_id: str = "default", limit: int = 50, offset: int = 0):
         """Get OpenAI-compatible message list (unwrapped contents)."""
         return self._unwrap_entries(self.history)
 
@@ -107,7 +107,7 @@ class ChatHistoryManager:
                 return entry
         return None
 
-    def clear_history(self):
+    def clear_history(self, chat_id: str = "default"):
         self.history = []
         self.save_history()
 

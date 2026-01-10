@@ -1,13 +1,24 @@
 import sys
 import os
 import asyncio
+import json
+import base64
+from PIL import Image
+import io
+import argparse
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request
+from pydantic import BaseModel, ValidationError
+from typing import Dict, List
+from datetime import datetime
+import uvicorn
 
 # Add parent directory to path so we can import agent, tools, etc.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from datetime import datetime
 from agent import Agent, AgentConfig
 from agent.agent import make_serializable
+import config
+
 
 from tools import (
     GetUserMemoriesTool,
@@ -46,13 +57,24 @@ from tools.todo_tools import TodoManager
 
 from secure_storage import load_config, save_config, get_secret, set_secret, delete_secret
 
-import base64
-from PIL import Image
-import io
-import json
-import argparse
-import config
+from agent_service.models import (
+    ChatHistoryResponse,
+    ChatHistoryResponsePayload,
+    DeleteHistoryRequest,
+    UpdateSettingsRequest,
+    OperationResponse,
+    OperationResponsePayload,
+    ErrorResponse,
+    ErrorPayload
+)
 
+from agent_service.models import (
+    UserMessageEvent,
+    ScreenshotEvent,
+    CancelEvent,
+    StatusResponse,
+    StatusPayload,
+)
 
 def color_text(text, color_code):
     # Windows PowerShell supports ANSI escape codes in recent versions
@@ -61,12 +83,12 @@ def color_text(text, color_code):
 
 # Initialize global variables
 chat_history_manager = None
-todo_manager = None
-agent = None
-agent_name = config.AGENT_NAME
-user_id = config.USER_ID
-project_root = None
-partial_images = {}
+todo_manager         = None
+agent                = None
+agent_name           = config.AGENT_NAME
+user_id              = config.USER_ID
+project_root         = None
+partial_images       = {}
 
 # Get API key (env takes precedence, fallback to credentials manager)
 api_key = os.environ.get("OPENAI_API_KEY")
@@ -78,6 +100,27 @@ base_url = os.environ.get("OPENAI_API_BASE_URL")
 if not base_url:
     cfg = load_config()
     base_url = cfg.get("base_url", "")
+
+
+# Add WebSocket support
+class ConnectionManager:
+    """Manages WebSocket connections."""
+    
+    def __init__(self):
+        self.active_connections: Dict[str, WebSocket] = {}
+    
+    async def connect(self, websocket: WebSocket, chat_id: str):
+        await websocket.accept()
+        self.active_connections[chat_id] = websocket
+    
+    def disconnect(self, chat_id: str):
+        self.active_connections.pop(chat_id, None)
+    
+    async def send_response(self, chat_id: str, response):
+        """Send Pydantic response model to client."""
+        websocket = self.active_connections.get(chat_id)
+        if websocket:
+            await websocket.send_json(response.model_dump(mode='json'))
 
 
 def initialize_agent(load_history=True):
@@ -153,7 +196,7 @@ def initialize_agent(load_history=True):
     )
 
 
-def process_message(user_input_text, screenshots_b64=None, max_turns=None):
+def process_message(user_input_text, files_list=None, screenshots_b64=None, max_turns=None):
     """Process a message and return the event stream."""
     global agent, chat_history_manager
 
@@ -161,6 +204,12 @@ def process_message(user_input_text, screenshots_b64=None, max_turns=None):
         max_turns = config.MAX_TURNS
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     formatted_input = f"> **Timestamp:** `{timestamp}`\nUser's input: {user_input_text}"
+
+    if files_list:
+        file_context = "\n\n**Attached files/folders:**\n"
+        for path in files_list:
+            file_context += f"- `{path}`\n"
+        formatted_input = formatted_input + file_context if formatted_input else file_context.strip()
     
     if agent.client:
         # Start the agent run with text and optional screenshots
@@ -295,11 +344,9 @@ def run_service(port=None):
     """Run as FastAPI service."""
     if port is None:
         port = config.DEFAULT_PORT
-    from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-    from pydantic import BaseModel
-    import uvicorn
     
     app = FastAPI()
+    manager = ConnectionManager()
     
     # Initialize agent on startup with history loaded
     initialize_agent(load_history=True)
@@ -310,37 +357,93 @@ def run_service(port=None):
     def health():
         return {"status": "ok", "service": config.SERVICE_NAME}
     
+
     @app.get("/chat/history")
-    def get_chat_history():
-        """Get the current chat history."""
-        return {"history": chat_history_manager.get_history()}
-    
-    @app.delete("/chat/history")
-    def clear_chat_history():
-        """Clear the chat history."""
+    async def get_chat_history(
+        chat_id: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> ChatHistoryResponse:
+        """Get the current chat history and return as OpenAI-compatible message list."""
+
         try:
-            chat_history_manager.clear_history()
+            print(f"Fetching chat history for chat_id={chat_id}, limit={limit}, offset={offset}")
+            entries = chat_history_manager.get_history(chat_id=chat_id, limit=limit, offset=offset)
+
+            # save history into a json file for debugging
+            with open("chat_history_debug.json", "w", encoding="utf-8") as f:
+                json.dump(entries, f, indent=2)
+
+            return ChatHistoryResponse(
+                type="chat_history_response",
+                payload=ChatHistoryResponsePayload(
+                    entries=entries,
+                    total_count=len(entries)
+                    )
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+
+    @app.delete("/chat/history")
+    async def clear_chat_history(request: DeleteHistoryRequest) -> OperationResponse:
+        """Delete the chat history."""
+
+        try:
+            chat_id = request.payload.chat_id
+            chat_history_manager.clear_history(chat_id=chat_id)
             chat_history_manager.clear_generated_images()
             todo_manager.clear_todos()
-            return {"status": "ok", "message": "Chat history cleared"}
+
+            return OperationResponse(
+                type="operation_response",
+                payload=OperationResponsePayload(
+                    success=True,
+                    message="Chat history cleared"
+                )
+            )
+        
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
         
+
     @app.put("/settings/update")
-    def update_settings():
-        """Signal that the settings have been updated."""
+    def update_settings(request: UpdateSettingsRequest) -> OperationResponse:
+        """Update agent service settings such as API token and base URL."""
         try:
             global api_key, base_url, agent
 
+            url = request.payload.settings.get("base_url", "")
+            token = request.payload.settings.get("api_token", "")
+
             cfg = load_config()
-            base_url = cfg.get("base_url", "")
-            api_key = get_secret("api_token")
+            if url:
+                cfg["base_url"] = url
+            elif "base_url" in cfg:
+                del cfg["base_url"]
+            save_config(cfg)
 
-            agent.update_client(api_key=api_key, base_url=base_url)
+            if token:
+                # Overwrite deterministically: delete then set
+                delete_secret("api_token")
+                set_secret("api_token", token)
+            else:
+                # Empty input means clear token
+                delete_secret("api_token")
 
-            return {"status": "ok", "message": "Settings updated"}
+            api_key = token
+            base_url = url    
+
+            agent.update_client(api_key=token, base_url=url)
+
+            return OperationResponse(
+                type="operation_response",
+                payload=OperationResponsePayload(
+                    success=True,
+                    message="Settings updated successfully"
+                )
+            )
         except Exception as e:
-            print(f"Error updating settings: {e}")
             raise HTTPException(status_code=500, detail=str(e))
     
     @app.websocket("/chat/ws")
@@ -367,6 +470,7 @@ def run_service(port=None):
                 # Handle different message types
                 if msg_type == "message":
                     message = data.get("message", "")
+                    files_list = data.get("files", [])
                     has_screenshots = data.get("has_screenshots", False)
                     screenshot_count = data.get("screenshot_count", 0)
                     max_turns = data.get("max_turns", config.MAX_TURNS)
@@ -394,7 +498,7 @@ def run_service(port=None):
                         processing = True
                         # Process the message and stream events
                         # Use asyncio to avoid blocking the event loop
-                        stream = process_message(message, screenshots_b64, max_turns)
+                        stream = process_message(message, files_list, screenshots_b64, max_turns)
                         
                         if stream:
                             # Iterate through events and yield control to event loop
