@@ -6,7 +6,7 @@ from openai import OpenAI
 from .config import AgentConfig
 
 class Agent:
-    def __init__(self, api_key, base_url, name, tools, user_id=None, config: Optional[AgentConfig] = None):
+    def __init__(self, api_key=None, base_url=None, name=None, tools=[], user_id="default_user", config: Optional[AgentConfig] = None):
         """AI Agent wrapper.
 
         Parameters:
@@ -93,10 +93,13 @@ class Agent:
         if input_messages is None or (message is None and screenshots_b64 is None) or (message is not None and not isinstance(message, str)):
             yield {
                 "type": "response.agent.done",
-                "message": "No user input provided or input is invalid.",
-                "duration_seconds": (datetime.now() - self._run_start_time).total_seconds(),
-                "chat_history": self.chat_history_during_run,
-                "generated_images": self.generated_images
+                "agent_name": self.name,
+                "content":{
+                    "message": "No user input provided or input is invalid.",
+                    "duration_seconds": (datetime.now() - self._run_start_time).total_seconds(),
+                    "chat_history": self.chat_history_during_run,
+                    "generated_images": self.generated_images
+                }
             }
             return
 
@@ -106,11 +109,14 @@ class Agent:
             if self._stop_requested:
                 yield {
                     "type": "response.agent.done",
-                    "message": "Agent run stopped by user request.",
-                    "duration_seconds": (datetime.now() - self._run_start_time).total_seconds(),
-                    "chat_history": self.chat_history_during_run,
-                    "generated_images": self.generated_images,
-                    "stopped": True
+                    "agent_name": self.name,
+                    "content": {
+                        "message": "Agent run stopped by user request.",
+                        "duration_seconds": (datetime.now() - self._run_start_time).total_seconds(),
+                        "chat_history": self.chat_history_during_run,
+                        "generated_images": self.generated_images,
+                        "stopped": True
+                    }
                 }
                 return
             
@@ -118,20 +124,26 @@ class Agent:
             if self.turn > max_turns:
                 yield {
                     "type": "response.agent.done",
-                    "message": f"Max turns exceeded (max_turns={max_turns}).",
-                    "duration_seconds": (datetime.now() - self._run_start_time).total_seconds(),
-                    "chat_history": self.chat_history_during_run,
-                    "generated_images": self.generated_images
+                    "agent_name": self.name,
+                    "content": {
+                        "message": f"Max turns exceeded (max_turns={max_turns}).",
+                        "duration_seconds": (datetime.now() - self._run_start_time).total_seconds(),
+                        "chat_history": self.chat_history_during_run,
+                        "generated_images": self.generated_images
+                    }
                 }
                 return
             # if this is not the first turn and no function call was detected, break the agent loop
             if self.turn > 1 and not self.function_call_detected:
                 yield {
                     "type": "response.agent.done",
-                    "message": "Agent run completed without further user input or function calls.",
-                    "duration_seconds": (datetime.now() - self._run_start_time).total_seconds(),
-                    "chat_history": self.chat_history_during_run,
-                    "generated_images": self.generated_images
+                    "agent_name": self.name,
+                    "content": {
+                        "message": "Agent run completed without further user input or function calls.",
+                        "duration_seconds": (datetime.now() - self._run_start_time).total_seconds(),
+                        "chat_history": self.chat_history_during_run,
+                        "generated_images": self.generated_images
+                    }
                 }
                 return
             elif self.turn == 1:
@@ -195,35 +207,92 @@ class Agent:
                     if self._stop_requested:
                         yield {
                             "type": "response.agent.done",
-                            "message": "Agent run stopped by user request.",
-                            "duration_seconds": (datetime.now() - self._run_start_time).total_seconds(),
-                            "chat_history": self.chat_history_during_run,
-                            "generated_images": self.generated_images,
-                            "stopped": True
+                            "agent_name": self.name,
+                            "content": {
+                                "message": "Agent run stopped by user request.",
+                                "duration_seconds": (datetime.now() - self._run_start_time).total_seconds(),
+                                "chat_history": self.chat_history_during_run,
+                                "generated_images": self.generated_images,
+                                "stopped": True
+                            }
                         }
                         return
                     
                     if event.type == "response.reasoning_summary_part.added":
-                        yield {"type": "response.reasoning_summary_part.added"}
+                        yield {
+                            "type": "response.reasoning_summary_part.added", 
+                            "agent_name": self.name, 
+                            "content": {}
+                        }
                     elif event.type == "response.reasoning_summary_text.delta":
-                        yield {"type": "response.reasoning_summary_text.delta", "delta": event.delta}
+                        yield {
+                            "type": "response.reasoning_summary_text.delta", 
+                            "agent_name": self.name, 
+                            "content": {
+                                "delta": event.delta
+                            }
+                        }
                     elif event.type == "response.reasoning_summary_text.done":
-                        yield {"type": "response.reasoning_summary_text.done", "text": event.text}
+                        yield {
+                            "type": "response.reasoning_summary_text.done", 
+                            "agent_name": self.name, 
+                            "content": {
+                                "text": event.text
+                            }
+                        }
                     elif event.type == "response.content_part.added":
-                        yield {"type": "response.content_part.added"}
+                        yield {
+                            "type": "response.content_part.added", 
+                            "agent_name": self.name,
+                            "content": {}
+                        }
                     elif event.type == "response.output_text.delta":
-                        yield {"type": "response.output_text.delta", "delta": event.delta}
+                        yield {
+                            "type": "response.output_text.delta", 
+                            "agent_name": self.name, 
+                            "content": {
+                                "delta": event.delta
+                            }
+                        }
                     elif event.type == "response.output_text.done":
-                        yield {"type": "response.output_text.done", "text": event.text}
+                        yield {
+                            "type": "response.output_text.done", 
+                            "agent_name": self.name, 
+                            "content": {
+                                "text": event.text
+                            }
+                        }
                     elif event.type == "response.output_item.done":
                         if event.item.type in ["function_call", "custom_tool_call"]:
-                            yield {"type": "response.output_item.done", "item": event.item}
+                            yield {
+                                "type": "response.output_item.done", 
+                                "agent_name": self.name, 
+                                "content": {
+                                    "item": event.item
+                                }
+                            }
                     elif event.type == "response.image_generation_call.generating":
-                        yield {"type": "response.image_generation_call.generating"}
+                        yield {
+                            "type": "response.image_generation_call.generating", 
+                            "agent_name": self.name,
+                            "content": {}
+                        }
                     elif event.type == "response.image_generation_call.partial_image":
-                        yield {"type": "response.image_generation_call.partial_image", "data": event}
+                        yield {
+                            "type": "response.image_generation_call.partial_image", 
+                            "agent_name": self.name, 
+                            "content": {
+                                "data": event
+                            }
+                        }
                     elif event.type == "response.image_generation_call.completed":
-                        yield {"type": "response.image_generation_call.completed", "data": event}
+                        yield {
+                            "type": "response.image_generation_call.completed", 
+                            "agent_name": self.name, 
+                            "content": {
+                                "data": event
+                            }
+                        }
                     elif event.type == "response.completed":
                         # Collect token usage for this turn
                         self.token_usage = {
@@ -293,7 +362,13 @@ class Agent:
                                     "image_url": f"data:image/png;base64,{base64_image}",
                                 })
 
-                        yield {"type": "response.completed", "usage": self.token_usage}
+                        yield {
+                            "type": "response.completed", 
+                            "agent_name": self.name, 
+                            "content": {
+                                "usage": self.token_usage
+                            }
+                        }
 
                     elif event.type == "error":
                         # Handle error output item
@@ -323,10 +398,13 @@ class Agent:
 
                 yield {
                     "type": "response.agent.done",
-                    "message": f"An error occurred during agent run: {str(e)}",
-                    "duration_seconds": (datetime.now() - self._run_start_time).total_seconds(),
-                    "chat_history": self.chat_history_during_run,
-                    "generated_images": self.generated_images
+                    "agent_name": self.name,
+                    "content": {
+                        "message": f"An error occurred during agent run: {str(e)}",
+                        "duration_seconds": (datetime.now() - self._run_start_time).total_seconds(),
+                        "chat_history": self.chat_history_during_run,
+                        "generated_images": self.generated_images
+                    }
                 }
                 return 
 

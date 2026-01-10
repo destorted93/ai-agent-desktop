@@ -230,9 +230,9 @@ def handle_event(event, interactive_mode=True):
     
     # Handle image saving for both modes
     if event["type"] == "response.image_generation_call.partial_image":
-        b64_data = event['data'].partial_image_b64
-        item_id = event['data'].item_id
-        sequence_number = event['data'].sequence_number
+        b64_data = event['content']['data'].partial_image_b64
+        item_id = event['content']['data'].item_id
+        sequence_number = event['content']['data'].sequence_number
         image_bytes = base64.b64decode(b64_data)
         image = Image.open(io.BytesIO(image_bytes))
         
@@ -247,11 +247,11 @@ def handle_event(event, interactive_mode=True):
         
         if interactive_mode:
             image.show(title=f"Partial Image {item_id}-{sequence_number}")
-            print(color_text(f"Partial image saved to {image_path}", '32'), flush=True)
+            print(color_text(f"[{event["agent_name"]}] Partial image saved to {image_path}", '32'), flush=True)
     
     elif event["type"] == "response.image_generation_call.completed":
-        item_id = event['data'].item_id
-        sequence_number = event['data'].sequence_number
+        item_id = event['content']['data'].item_id
+        sequence_number = event['content']['data'].sequence_number
         
         if item_id in partial_images and sequence_number in partial_images[item_id]:
             images_folder = os.path.join(project_root, "images")
@@ -260,51 +260,51 @@ def handle_event(event, interactive_mode=True):
             partial_images[item_id][sequence_number].save(image_path, format="PNG")
             
             if interactive_mode:
-                print(color_text(f"Completed image saved to {image_path}", '32'), flush=True)
+                print(color_text(f"[{event["agent_name"]}] Completed image saved to {image_path}", '32'), flush=True)
     
     elif event["type"] == "response.agent.done":
         # Reload history from file to respect any deletions/changes made during the run
         chat_history_manager.history = chat_history_manager.load_history()
         
         # Append only the NEW entries from this agent run
-        chat_history_manager.append_entries(event["chat_history"])
+        chat_history_manager.append_entries(event['content']["chat_history"])
         chat_history_manager.save_history()
-        chat_history_manager.add_generated_images(event["generated_images"])
+        chat_history_manager.add_generated_images(event['content']["generated_images"])
         chat_history_manager.save_generated_images()
         
         if interactive_mode:
-            print(color_text("\n[Agent Done]", '32'), event.get("message", ""), 
-                  f" (duration: {event.get('duration_seconds', 0)} seconds)", flush=True)
+            print(color_text(f"\n[{event["agent_name"]}] [Agent Done]", '32'), event['content'].get("message", ""), 
+                  f" (duration: {event['content'].get('duration_seconds', 0)} seconds)", flush=True)
     
     # Print to console in interactive mode
     if interactive_mode:
         if event["type"] == "response.reasoning_summary_part.added":
-            print(color_text("Thinking: ", '33'), end="", flush=True)
+            print(color_text(f"[{event["agent_name"]}] Thinking: ", '33'), end="", flush=True)
         elif event["type"] == "response.reasoning_summary_text.delta":
-            print(event["delta"], end="", flush=True)
+            print(event['content']["delta"], end="", flush=True)
         elif event["type"] == "response.reasoning_summary_text.done":
             print("\n", flush=True)
         elif event["type"] == "response.content_part.added":
-            print(color_text("Assistant: ", '36'), end="", flush=True)
+            print(color_text(f"[{event["agent_name"]}] Assistant: ", '36'), end="", flush=True)
         elif event["type"] == "response.output_text.delta":
-            print(event["delta"], end="", flush=True)
+            print(event['content']["delta"], end="", flush=True)
         elif event["type"] == "response.output_text.done":
             print("\n", flush=True)
         elif event["type"] == "response.output_item.done":
-            if event["item"].type == "function_call":
-                print(color_text(f"\n[Function Call] {event['item'].name} with arguments: {event['item'].arguments}", '35'), flush=True)
-            elif event["item"].type == "custom_tool_call":
-                print(color_text(f"\n[Custom Tool Call] {event['item'].name} with arguments: {event['item'].input}", '35'), flush=True)
+            if event['content']["item"].type == "function_call":
+                print(color_text(f"\n[{event["agent_name"]}] [Function Call] {event['content']['item'].name} with arguments: {event['content']['item'].arguments}", '35'), flush=True)
+            elif event["content"]["item"].type == "custom_tool_call":
+                print(color_text(f"\n[{event["agent_name"]}] [Custom Tool Call] {event['content']['item'].name} with arguments: {event['content']['item'].input}", '35'), flush=True)
         elif event["type"] == "response.image_generation_call.generating":
-            print(color_text(f"\n[Image Generation]...", '34'), flush=True)
+            print(color_text(f"\n[{event["agent_name"]}] [Image Generation]...", '34'), flush=True)
         elif event["type"] == "response.image_generation_call.partial_image":
-            print(color_text(f"\n[Image Generation] Partial Image {event['data'].partial_image_index}...", '34'), flush=True)
+            print(color_text(f"\n[{event["agent_name"]}] [Image Generation] Partial Image {event['content']['data'].partial_image_index}...", '34'), flush=True)
         elif event["type"] == "response.image_generation_call.completed":
-            print(color_text(f"\n[Image Generation] Completed", '34'), flush=True)
+            print(color_text(f"\n[{event["agent_name"]}] [Image Generation] Completed", '34'), flush=True)
         elif event["type"] == "response.completed":
-            usage = event.get("usage", {})
+            usage = event['content'].get("usage", {})
             if usage:
-                print(color_text(f"\n[Usage] {usage}", '34'), flush=True)
+                print(color_text(f"\n[{event["agent_name"]}] [Usage] {usage}", '34'), flush=True)
 
 
 def run_interactive():

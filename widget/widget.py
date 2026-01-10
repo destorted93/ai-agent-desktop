@@ -1993,27 +1993,27 @@ class Gadget(QWidget):
             event_type = event.get("type", "")
             
             if event_type == "response.reasoning_summary_part.added":
-                self.chat_window.append_to_ai_response("Thinking: ", '33')
+                self.chat_window.append_to_ai_response(f"[{event["agent_name"]}] Thinking: ", '33')
             
             elif event_type == "response.reasoning_summary_text.delta":
-                delta = event.get("delta", "")
+                delta = event['content'].get("delta", "")
                 self.chat_window.append_to_ai_response(delta)
             
             elif event_type == "response.reasoning_summary_text.done":
                 self.chat_window.append_to_ai_response("\n")
             
             elif event_type == "response.content_part.added":
-                self.chat_window.append_to_ai_response("Assistant: ", '36')
+                self.chat_window.append_to_ai_response(f"[{event["agent_name"]}] Assistant: ", '36')
             
             elif event_type == "response.output_text.delta":
-                delta = event.get("delta", "")
+                delta = event['content'].get("delta", "")
                 self.chat_window.append_to_ai_response(delta)
             
             elif event_type == "response.output_text.done":
                 self.chat_window.append_to_ai_response("\n")
             
             elif event_type == "response.output_item.done":
-                item = event.get("item", {})
+                item = event['content'].get("item", {})
                 # Ensure item is a dictionary
                 if isinstance(item, dict):
                     item_type = item.get("type", "")
@@ -2024,20 +2024,20 @@ class Gadget(QWidget):
                         self.chat_window.finish_ai_response()
                         self.chat_window.start_ai_response()
                         self.chat_window.append_to_ai_response(
-                            f"[Function Call] {func_name}\n",
+                            f"[{event["agent_name"]}] [Function Call] {func_name}\n",
                             '35'
                         )
                         if func_args:
-                            self.chat_window.append_to_ai_response(f"Arguments: {func_args}\n")
+                            self.chat_window.append_to_ai_response(f"[{event["agent_name"]}] Arguments: {func_args}\n")
                         self.chat_window.finish_ai_response()
                         # Start a new widget for the next response
                         self.chat_window.start_ai_response()
             
             elif event_type == "response.image_generation_call.generating":
-                self.chat_window.append_to_ai_response("\n[Image Generation]...\n", '34')
+                self.chat_window.append_to_ai_response(f"\n[{event["agent_name"]}] [Image Generation]...\n", '34')
             
             elif event_type == "response.image_generation_call.completed":
-                self.chat_window.append_to_ai_response("[Image Generation] Completed\n", '34')
+                self.chat_window.append_to_ai_response(f"[{event["agent_name"]}] [Image Generation] Completed\n", '34')
             
             elif event_type == "response.completed":
                 # Skip displaying usage info - not needed in chat UI
@@ -2045,8 +2045,8 @@ class Gadget(QWidget):
             
             elif event_type == "response.agent.done":
                 # Check if it was stopped by user
-                if event.get("stopped"):
-                    self.chat_window.append_to_ai_response("\n[Stopped by user]\n", '31')
+                if event['content'].get("stopped"):
+                    self.chat_window.append_to_ai_response(f"\n[{event["agent_name"]}] [Stopped by user]\n", '31')
                     self.chat_window.finish_ai_response()
                     self.chat_window.stop_sending_state()
                 # Otherwise skip displaying agent done message - not needed in chat UI
@@ -2059,14 +2059,14 @@ class Gadget(QWidget):
             
             elif event_type == "error":
                 # Custom error event
-                error_msg = event.get("message", "Unknown error")
-                self.chat_window.append_to_ai_response(f"\n[Error] {error_msg}\n", '31')
+                error_msg = event['content'].get("message", "Unknown error")
+                self.chat_window.append_to_ai_response(f"\n[{event["agent_name"]}] [Error] {error_msg}\n", '31')
                 self.chat_window.finish_ai_response()
                 # Stop sending animation on error
                 self.chat_window.stop_sending_state()
         
         except Exception as e:
-            print(f"Error in handle_agent_event: {e}")
+            print(f"[{event["agent_name"]}] Error in handle_agent_event: {e}")
             import traceback
             traceback.print_exc()
 
