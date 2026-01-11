@@ -14,9 +14,17 @@ import websockets
 import traceback
 from PyQt6.QtWidgets import (QApplication, QWidget, QPushButton, QVBoxLayout, 
                               QHBoxLayout, QMenu, QTextEdit, QLineEdit, QScrollArea,
-                              QLabel, QFrame, QSizePolicy, QLayout, QDialog, QMessageBox)
+                              QLabel, QFrame, QSizePolicy, QLayout, QDialog, QMessageBox, QTextBrowser, QSizePolicy)
 from PyQt6.QtGui import QAction, QTextCursor, QFont, QTextOption, QKeyEvent, QPainter, QColor, QPen, QPixmap
 from PyQt6.QtCore import Qt, QPoint, QEvent, pyqtSignal, QObject, QThread, pyqtSlot, QTimer, QRect, QSize
+
+import markdown
+import re
+from pygments import highlight
+from pygments.lexers import get_lexer_by_name, guess_lexer
+from pygments.lexers.agile import PythonLexer
+from pygments.formatters import HtmlFormatter
+
 from agent_service import AgentService
 
 
@@ -300,7 +308,7 @@ class ChatWindow(QWidget):
         
         # Chat display area
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(5, 0, 5, 5)
         layout.setSpacing(0)
         
         # Top toolbar with chat history dropdown, new chat button, token label, screenshot and clear buttons
@@ -427,17 +435,17 @@ class ChatWindow(QWidget):
         layout.addWidget(toolbar)
         
         # Scrollable chat display
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        
+        self.scrollable_area = QScrollArea()
+        self.scrollable_area.setWidgetResizable(True)
+        self.scrollable_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
         self.chat_container = QWidget()
         self.chat_layout = QVBoxLayout(self.chat_container)
         self.chat_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.chat_layout.setSpacing(10)
         
-        scroll.setWidget(self.chat_container)
-        layout.addWidget(scroll)
+        self.scrollable_area.setWidget(self.chat_container)
+        layout.addWidget(self.scrollable_area)
         
         # Attached files area (hidden by default)
         self.attached_files_widget = QWidget()
@@ -565,34 +573,34 @@ class ChatWindow(QWidget):
         self.current_ai_widget = None
         
         # Styling
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #1e1e1e;
-                color: #ffffff;
-            }
-            QTextEdit {
-                background-color: #2d2d2d;
-                color: #ffffff;
-                border: 1px solid #3d3d3d;
-                border-radius: 5px;
-                padding: 8px;
-                font-size: 13px;
-            }
-            QPushButton {
-                background-color: #0e639c;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                padding: 8px 16px;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background-color: #1177bb;
-            }
-            QScrollArea {
-                border: none;
-            }
-        """)
+        # self.setStyleSheet("""
+        #     QWidget {
+        #         background-color: #1e1e1e;
+        #         color: #ffffff;
+        #     }
+        #     QTextEdit {
+        #         background-color: #2d2d2d;
+        #         color: #ffffff;
+        #         border: 1px solid #3d3d3d;
+        #         border-radius: 5px;
+        #         padding: 8px;
+        #         font-size: 13px;
+        #     }
+        #     QPushButton {
+        #         background-color: #0e639c;
+        #         color: white;
+        #         border: none;
+        #         border-radius: 5px;
+        #         padding: 8px 16px;
+        #         font-size: 13px;
+        #     }
+        #     QPushButton:hover {
+        #         background-color: #1177bb;
+        #     }
+        #     QScrollArea {
+        #         border: none;
+        #     }
+        # """)
         
         self.parent_widget = parent
     
@@ -712,14 +720,193 @@ class ChatWindow(QWidget):
         self.chat_layout.addWidget(msg_widget)
         self.scroll_to_bottom()
     
+    class CodeBlockWidget(QWidget):
+        """Custom widget for displaying code blocks with copy button and syntax highlighting."""
+        
+        def __init__(self, code, language="", parent=None):
+            super().__init__(parent)
+            self.code = code
+            self.language = language
+            self.setup_ui()
+        
+        def setup_ui(self):
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(0, 5, 0, 5)
+            layout.setSpacing(0)
+            
+            # Header with language and copy button
+            header = QWidget()
+            header_layout = QHBoxLayout(header)
+            header_layout.setContentsMargins(10, 5, 10, 5)
+            header_layout.setSpacing(10)
+            
+            lang_label = QLabel(self.language.upper() if self.language else "CODE")
+            lang_label.setStyleSheet("""
+                QLabel {
+                    color: #888;
+                    font-size: 11px;
+                    font-weight: bold;
+                }
+            """)
+            
+            copy_btn = QPushButton("Copy")
+            copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            copy_btn.clicked.connect(self.copy_code)
+            copy_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #3a3a3a;
+                    color: #d4d4d4;
+                    border: 1px solid #555;
+                    border-radius: 4px;
+                    padding: 4px 12px;
+                    font-size: 11px;
+                }
+                QPushButton:hover {
+                    background-color: #4a4a4a;
+                    border-color: #666;
+                }
+                QPushButton:pressed {
+                    background-color: #2a2a2a;
+                }
+            """)
+            
+            header_layout.addWidget(lang_label)
+            header_layout.addStretch()
+            header_layout.addWidget(copy_btn)
+            
+            header.setStyleSheet("""
+                QWidget {
+                    background-color: #2a2a2a;
+                    border-top-left-radius: 6px;
+                    border-top-right-radius: 6px;
+                }
+            """)
+            
+            # Code display
+            code_display = QTextBrowser()
+            code_display.setReadOnly(True)
+            code_display.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            code_display.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            
+            code_font = QFont('Consolas', 10)
+            code_display.setFont(code_font)
+            
+            code_display.setStyleSheet("""
+                QTextBrowser {
+                    background-color: #272822;
+                    color: #d4d4d4;
+                    border: none;
+                    border-bottom-left-radius: 6px;
+                    border-bottom-right-radius: 6px;
+                    padding: 10px;
+                    font-family: 'Consolas', 'Courier New', monospace;
+                }
+                QScrollBar:horizontal {
+                    background-color: #272822;
+                    height: 10px;
+                }
+                QScrollBar::handle:horizontal {
+                    background-color: #3a3a3a;
+                    border-radius: 5px;
+                }
+                QScrollBar::handle:horizontal:hover {
+                    background-color: #4a4a4a;
+                }
+            """)
+            
+            highlighted_html = self.get_highlighted_code()
+            code_display.setHtml(highlighted_html)
+            
+            def adjust_height():
+                doc = code_display.document()
+                doc.setTextWidth(code_display.viewport().width())
+                doc_height = doc.size().height()
+                final_height = max(int(doc_height + 30), 50)
+                code_display.setMinimumHeight(final_height)
+                code_display.setMaximumHeight(final_height)
+            
+            QTimer.singleShot(10, adjust_height)
+            code_display.document().contentsChanged.connect(adjust_height)
+            
+            layout.addWidget(header)
+            layout.addWidget(code_display)
+            
+            self.setStyleSheet("""
+                CodeBlockWidget {
+                    border: 1px solid #3a3a3a;
+                    border-radius: 6px;
+                }
+            """)
+        
+        def get_highlighted_code(self):
+            """Apply syntax highlighting using Pygments."""
+            try:
+                if self.language:
+                    lexer = get_lexer_by_name(self.language, stripall=True)
+                else:
+                    try:
+                        lexer = guess_lexer(self.code)
+                    except:
+                        lexer = PythonLexer()
+            except:
+                lexer = PythonLexer()
+            
+            formatter = HtmlFormatter(style='monokai', noclasses=True, nowrap=False, linenos=False)
+            highlighted = highlight(self.code, lexer, formatter)
+            
+            html = f"""
+            <style>
+                body {{
+                    margin: 0;
+                    padding: 0;
+                    background-color: #272822;
+                    font-family: 'Consolas', 'Courier New', monospace;
+                    font-size: 13px;
+                    line-height: 1.4;
+                }}
+                .highlight {{
+                    margin: 0;
+                    padding: 0;
+                }}
+                .highlight pre {{
+                    margin: 0;
+                    padding: 0;
+                    background-color: transparent;
+                    white-space: pre;
+                    line-height: 1.4;
+                }}
+            </style>
+            {highlighted}
+            """
+            
+            return html
+        
+        def copy_code(self):
+            """Copy code to clipboard."""
+            clipboard = QApplication.clipboard()
+            clipboard.setText(self.code)
+            
+            sender = self.sender()
+            original_text = sender.text()
+            sender.setText("Copied!")
+            QTimer.singleShot(1500, lambda: sender.setText(original_text))
+
+
     def start_ai_response(self):
-        """Start a new AI response section (full width, plain text)."""
-        self.current_ai_widget = QLabel()
-        self.current_ai_widget.setWordWrap(True)
-        self.current_ai_widget.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.current_ai_widget.setTextFormat(Qt.TextFormat.RichText)
+        """Start a new AI response section - initially just show markdown."""
+        # Create a simple text browser for streaming content
+        self.current_ai_widget = QTextBrowser()
+        self.current_ai_widget.setReadOnly(True)
+        self.current_ai_widget.setOpenExternalLinks(True)
+        self.current_ai_widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.current_ai_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.current_ai_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        
+        font = QFont('Consolas', 10)
+        self.current_ai_widget.setFont(font)
+        
         self.current_ai_widget.setStyleSheet("""
-            QLabel {
+            QTextBrowser {
                 background-color: transparent;
                 color: #d4d4d4;
                 border: none;
@@ -729,46 +916,422 @@ class ChatWindow(QWidget):
             }
         """)
         
+        # Store raw markdown
+        self.current_ai_widget.raw_markdown = ""
+        
+        # Context menu
+        self.current_ai_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.current_ai_widget.customContextMenuRequested.connect(
+            lambda pos: self.show_text_context_menu(pos, self.current_ai_widget)
+        )
+        
+        # Auto-adjust height on content change
+        self.current_ai_widget.document().contentsChanged.connect(
+            lambda: self.adjust_simple_text_height(self.current_ai_widget)
+        )
+        
         self.chat_layout.addWidget(self.current_ai_widget)
         self.scroll_to_bottom()
+        
         return self.current_ai_widget
-    
+
+    def adjust_simple_text_height(self, text_browser):
+        """Adjust text browser height to fit content."""
+        doc = text_browser.document()
+        doc.setTextWidth(text_browser.viewport().width())
+        height = doc.size().height()
+        text_browser.setFixedHeight(int(height + 20))
+
     def append_to_ai_response(self, text, color=None):
-        """Append text to the current AI response."""
+        """Append text to the current AI response - just render as markdown, don't parse code blocks yet."""
         if self.current_ai_widget is None:
             self.start_ai_response()
         
-        # Convert text to string if it's not already
         if not isinstance(text, str):
             text = str(text)
         
-        current_text = self.current_ai_widget.text()
-        
+        # Append to stored markdown
         if color:
             color_map = {
-                '33': '#ffcc00',  # Yellow (thinking)
-                '36': '#00bfff',  # Cyan (assistant)
-                '35': '#ff00ff',  # Magenta (function call)
-                '34': '#1e90ff',  # Blue (usage/images)
-                '32': '#00ff00',  # Green (done)
-                '31': '#ff0000',  # Red (error)
+                '33': '#ffcc00',
+                '36': '#00bfff',
+                '35': '#ff00ff',
+                '34': '#1e90ff',
+                '32': '#00ff00',
+                '31': '#ff0000',
             }
             html_color = color_map.get(color, '#d4d4d4')
-            # Escape HTML characters in text and convert newlines to <br>
-            from html import escape
-            escaped_text = escape(text).replace('\n', '<br>')
-            self.current_ai_widget.setText(current_text + f'<span style="color: {html_color};">{escaped_text}</span>')
+            colored_text = f'<span style="color: {html_color};">{text}</span>'
+            self.current_ai_widget.raw_markdown += colored_text
         else:
-            from html import escape
-            escaped_text = escape(text).replace('\n', '<br>')
-            self.current_ai_widget.setText(current_text + escaped_text)
+            self.current_ai_widget.raw_markdown += text
+        
+        # Render as simple markdown (no code block extraction yet)
+        html = markdown.markdown(
+            self.current_ai_widget.raw_markdown,
+            extensions=['nl2br', 'sane_lists', 'extra', 'fenced_code']
+        )
+        
+        styled_html = f"""
+        <style>
+            body {{
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 13px;
+                color: #d4d4d4;
+                line-height: 1.5;
+                margin: 0;
+                padding: 0;
+            }}
+            p {{
+                margin: 0 0 10px 0;
+            }}
+            code {{
+                background-color: #2d2d2d;
+                padding: 2px 6px;
+                border-radius: 3px;
+                font-family: 'Consolas', monospace;
+            }}
+            pre {{
+                background-color: #2d2d2d;
+                padding: 10px;
+                border-radius: 5px;
+                overflow-x: auto;
+            }}
+            pre code {{
+                background-color: transparent;
+                padding: 0;
+            }}
+            a {{
+                color: #58a6ff;
+            }}
+        </style>
+        {html}
+        """
+        
+        self.current_ai_widget.setHtml(styled_html)
+        self.scroll_to_bottom()
+
+    def finish_ai_response(self):
+        """Called when AI response is complete - now parse and replace with code block widgets."""
+        if self.current_ai_widget is None:
+            return
+        
+        # Get the raw markdown
+        raw_markdown = getattr(self.current_ai_widget, 'raw_markdown', '')
+        
+        if not raw_markdown:
+            self.current_ai_widget = None
+            return
+        
+        # Check if there are any code blocks
+        has_code_blocks = '```' in raw_markdown
+        
+        if not has_code_blocks:
+            # No code blocks, just leave the simple markdown rendering
+            self.current_ai_widget = None
+            return
+        
+        # Remove the simple text widget
+        self.chat_layout.removeWidget(self.current_ai_widget)
+        self.current_ai_widget.deleteLater()
+        
+        # Create container with separate widgets for text and code blocks
+        msg_box = QWidget()
+        msg_box_layout = QVBoxLayout(msg_box)
+        msg_box_layout.setContentsMargins(0, 0, 0, 0)
+        msg_box_layout.setSpacing(0)
+        
+        content_container = QWidget()
+        content_layout = QVBoxLayout(content_container)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(10)
+        
+        msg_box_layout.addWidget(content_container)
+        
+        # Parse and render with code blocks
+        self.render_markdown_with_code_blocks(raw_markdown, content_layout)
+        
+        # Add to chat layout
+        self.chat_layout.addWidget(msg_box)
+        
+        # Reset current widget
+        self.current_ai_widget = None
         
         self.scroll_to_bottom()
-    
-    def finish_ai_response(self):
-        """Finish the current AI response."""
-        self.current_ai_widget = None
-        self.scroll_to_bottom()
+
+    def render_markdown_with_code_blocks(self, markdown_text, target_layout):
+        """Render markdown, extracting code blocks into separate widgets."""
+        
+        # Extract code blocks with regex
+        code_block_pattern = r'```(\w*)\n(.*?)```'
+        
+        parts = []
+        last_end = 0
+        
+        for match in re.finditer(code_block_pattern, markdown_text, re.DOTALL):
+            # Add text before code block
+            if match.start() > last_end:
+                parts.append(('text', markdown_text[last_end:match.start()]))
+            
+            # Add code block
+            language = match.group(1)
+            code = match.group(2).strip()
+            parts.append(('code', code, language))
+            
+            last_end = match.end()
+        
+        # Add remaining text
+        if last_end < len(markdown_text):
+            parts.append(('text', markdown_text[last_end:]))
+        
+        # Render each part
+        for part in parts:
+            if part[0] == 'text' and part[1].strip():
+                text_widget = self.create_text_widget(part[1])
+                target_layout.addWidget(text_widget)
+            elif part[0] == 'code':
+                code_widget = self.CodeBlockWidget(part[1], part[2])
+                target_layout.addWidget(code_widget)
+
+    def create_text_widget(self, markdown_text):
+        """Create a text widget for non-code markdown content."""
+        text_browser = QTextBrowser()
+        text_browser.setReadOnly(True)
+        text_browser.setOpenExternalLinks(True)
+        text_browser.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        text_browser.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        text_browser.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        
+        font = QFont('Consolas', 10)
+        text_browser.setFont(font)
+        
+        text_browser.setStyleSheet("""
+            QTextBrowser {
+                background-color: transparent;
+                color: #d4d4d4;
+                border: none;
+                padding: 5px;
+                font-size: 13px;
+                font-family: 'Consolas', 'Courier New', monospace;
+            }
+        """)
+        
+        text_browser.raw_markdown = markdown_text
+        
+        text_browser.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        text_browser.customContextMenuRequested.connect(
+            lambda pos: self.show_text_context_menu(pos, text_browser)
+        )
+        
+        # Convert markdown to HTML with tables extension
+        html = markdown.markdown(
+            markdown_text,
+            extensions=[
+                'nl2br',
+                'sane_lists',
+                'extra',       # Includes tables, footnotes, etc.
+                'tables',      # Explicit table support
+                'attr_list',   # Attribute lists
+                'def_list'     # Definition lists
+            ]
+        )
+        
+        # Enhanced styling for all markdown elements
+        styled_html = f"""
+        <style>
+            body {{
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 13px;
+                color: #d4d4d4;
+                line-height: 1.6;
+                margin: 0;
+                padding: 0;
+            }}
+            
+            /* Paragraphs */
+            p {{
+                margin: 0 0 10px 0;
+            }}
+            
+            /* Headings */
+            h1, h2, h3, h4, h5, h6 {{
+                color: #ffffff;
+                margin-top: 16px;
+                margin-bottom: 8px;
+                font-weight: 600;
+                line-height: 1.25;
+            }}
+            h1 {{ font-size: 2em; border-bottom: 1px solid #444; padding-bottom: 8px; }}
+            h2 {{ font-size: 1.5em; border-bottom: 1px solid #444; padding-bottom: 6px; }}
+            h3 {{ font-size: 1.25em; }}
+            h4 {{ font-size: 1em; }}
+            h5 {{ font-size: 0.875em; }}
+            h6 {{ font-size: 0.85em; color: #999; }}
+            
+            /* Inline code */
+            code {{
+                background-color: #2d2d2d;
+                padding: 2px 6px;
+                border-radius: 3px;
+                font-family: 'Consolas', monospace;
+                font-size: 0.9em;
+            }}
+            
+            /* Links */
+            a {{
+                color: #58a6ff;
+                text-decoration: none;
+            }}
+            a:hover {{
+                text-decoration: underline;
+            }}
+            
+            /* Lists */
+            ul, ol {{
+                margin: 8px 0;
+                padding-left: 24px;
+            }}
+            ul ul, ol ol, ul ol, ol ul {{
+                margin: 4px 0;
+            }}
+            li {{
+                margin: 4px 0;
+            }}
+            
+            /* Blockquotes */
+            blockquote {{
+                border-left: 4px solid #58a6ff;
+                background-color: #2d2d2d;
+                margin: 12px 0;
+                padding: 8px 16px;
+                color: #c9d1d9;
+                font-style: italic;
+            }}
+            blockquote p {{
+                margin: 4px 0;
+            }}
+            
+            /* Tables */
+            table {{
+                border-collapse: collapse;
+                width: 100%;
+                margin: 12px 0;
+                background-color: #1e1e1e;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+                overflow: hidden;
+            }}
+            
+            thead {{
+                background-color: #2a2a2a;
+            }}
+            
+            th {{
+                padding: 10px 12px;
+                text-align: left;
+                font-weight: 600;
+                color: #ffffff;
+                border-bottom: 2px solid #444;
+                border-right: 1px solid #3a3a3a;
+            }}
+            
+            th:last-child {{
+                border-right: none;
+            }}
+            
+            td {{
+                padding: 8px 12px;
+                border-bottom: 1px solid #2d2d2d;
+                border-right: 1px solid #2d2d2d;
+            }}
+            
+            td:last-child {{
+                border-right: none;
+            }}
+            
+            tr:last-child td {{
+                border-bottom: none;
+            }}
+            
+            tr:hover {{
+                background-color: #252525;
+            }}
+            
+            /* Horizontal rule */
+            hr {{
+                border: none;
+                border-top: 1px solid #444;
+                margin: 16px 0;
+            }}
+            
+            /* Strong and emphasis */
+            strong, b {{
+                font-weight: 600;
+                color: #ffffff;
+            }}
+            
+            em, i {{
+                font-style: italic;
+                color: #c9d1d9;
+            }}
+            
+            /* Strikethrough */
+            del, s {{
+                text-decoration: line-through;
+                color: #888;
+            }}
+            
+            /* Definition lists */
+            dl {{
+                margin: 12px 0;
+            }}
+            dt {{
+                font-weight: 600;
+                margin-top: 8px;
+            }}
+            dd {{
+                margin-left: 24px;
+                margin-bottom: 8px;
+            }}
+        </style>
+        {html}
+        """
+        
+        text_browser.setHtml(styled_html)
+        
+        # Adjust height to content
+        doc = text_browser.document()
+        doc.setTextWidth(text_browser.viewport().width())
+        height = doc.size().height()
+        text_browser.setFixedHeight(int(height + 20))
+        
+        return text_browser
+
+    def show_text_context_menu(self, pos, text_browser):
+        """Show context menu with copy options."""
+        menu = QMenu(self)
+        
+        copy_action = QAction("Copy", self)
+        copy_action.triggered.connect(lambda: text_browser.copy())
+        menu.addAction(copy_action)
+        
+        select_all_action = QAction("Select All", self)
+        select_all_action.triggered.connect(lambda: text_browser.selectAll())
+        menu.addAction(select_all_action)
+        
+        menu.addSeparator()
+        
+        copy_raw = QAction("Copy as Markdown", self)
+        copy_raw.triggered.connect(lambda: self.copy_raw_markdown(text_browser))
+        menu.addAction(copy_raw)
+        
+        menu.exec(text_browser.mapToGlobal(pos))
+
+    def copy_raw_markdown(self, text_browser):
+        """Copy the raw markdown text from the specific text browser widget."""
+        clipboard = QApplication.clipboard()
+        raw_text = getattr(text_browser, 'raw_markdown', '')
+        clipboard.setText(raw_text)
     
     def scroll_to_bottom(self):
         """Scroll to the bottom of the chat."""
@@ -1750,7 +2313,7 @@ class Gadget(QWidget):
                         # Create fresh widget for each text block (like streaming does)
                         self.chat_window.start_ai_response()
                         # Append the text exactly as streaming does
-                        self.chat_window.append_to_ai_response("Assistant: ", '36')
+                        self.chat_window.append_to_ai_response("Assistant:\n\n", '36')
                         self.chat_window.append_to_ai_response(text)
                         self.chat_window.finish_ai_response()
             
@@ -1760,7 +2323,7 @@ class Gadget(QWidget):
                 if summary:  # Only display if summary exists and is not empty
                     # Handle summary as string or list
                     if isinstance(summary, list):
-                        summary_text = " ".join(str(s) for s in summary)
+                        summary_text = "\n\n".join(str(s.get("text", s)) for s in summary)
                     else:
                         summary_text = str(summary.get("text", summary))
                     
@@ -1768,7 +2331,7 @@ class Gadget(QWidget):
                     if summary_text.strip():
                         # Create widget same as streaming
                         self.chat_window.start_ai_response()
-                        self.chat_window.append_to_ai_response("Thinking: ", '33')
+                        self.chat_window.append_to_ai_response("Thinking:\n\n", '33')
                         self.chat_window.append_to_ai_response(summary_text)
                         self.chat_window.finish_ai_response()
             
@@ -1782,7 +2345,7 @@ class Gadget(QWidget):
                     '35'
                 )
                 if func_args:
-                    self.chat_window.append_to_ai_response(f"Arguments: {func_args}\n")
+                    self.chat_window.append_to_ai_response(f"Arguments: {func_args}\n\n")
                 self.chat_window.finish_ai_response()
         
         # Force layout update after loading all history
@@ -1993,24 +2556,24 @@ class Gadget(QWidget):
             event_type = event.get("type", "")
             
             if event_type == "response.reasoning_summary_part.added":
-                self.chat_window.append_to_ai_response(f"[{event["agent_name"]}] Thinking: ", '33')
+                self.chat_window.append_to_ai_response(f"[{event["agent_name"]}] Thinking:\n\n", '33')
             
             elif event_type == "response.reasoning_summary_text.delta":
                 delta = event['content'].get("delta", "")
                 self.chat_window.append_to_ai_response(delta)
             
             elif event_type == "response.reasoning_summary_text.done":
-                self.chat_window.append_to_ai_response("\n")
+                self.chat_window.append_to_ai_response("\n\n")
             
             elif event_type == "response.content_part.added":
-                self.chat_window.append_to_ai_response(f"[{event["agent_name"]}] Assistant: ", '36')
+                self.chat_window.append_to_ai_response(f"[{event["agent_name"]}] Assistant:\n\n", '36')
             
             elif event_type == "response.output_text.delta":
                 delta = event['content'].get("delta", "")
                 self.chat_window.append_to_ai_response(delta)
             
             elif event_type == "response.output_text.done":
-                self.chat_window.append_to_ai_response("\n")
+                self.chat_window.append_to_ai_response("\n\n")
             
             elif event_type == "response.output_item.done":
                 item = event['content'].get("item", {})
@@ -2028,7 +2591,7 @@ class Gadget(QWidget):
                             '35'
                         )
                         if func_args:
-                            self.chat_window.append_to_ai_response(f"[{event["agent_name"]}] Arguments: {func_args}\n")
+                            self.chat_window.append_to_ai_response(f"[{event["agent_name"]}] Arguments: {func_args}\n\n")
                         self.chat_window.finish_ai_response()
                         # Start a new widget for the next response
                         self.chat_window.start_ai_response()
@@ -2037,7 +2600,7 @@ class Gadget(QWidget):
                 self.chat_window.append_to_ai_response(f"\n[{event["agent_name"]}] [Image Generation]...\n", '34')
             
             elif event_type == "response.image_generation_call.completed":
-                self.chat_window.append_to_ai_response(f"[{event["agent_name"]}] [Image Generation] Completed\n", '34')
+                self.chat_window.append_to_ai_response(f"[{event["agent_name"]}] [Image Generation] Completed\n\n", '34')
             
             elif event_type == "response.completed":
                 # Skip displaying usage info - not needed in chat UI
@@ -2046,7 +2609,7 @@ class Gadget(QWidget):
             elif event_type == "response.agent.done":
                 # Check if it was stopped by user
                 if event['content'].get("stopped"):
-                    self.chat_window.append_to_ai_response(f"\n[{event["agent_name"]}] [Stopped by user]\n", '31')
+                    self.chat_window.append_to_ai_response(f"\n[{event["agent_name"]}] [Stopped by user]\n\n", '31')
                     self.chat_window.finish_ai_response()
                     self.chat_window.stop_sending_state()
                 # Otherwise skip displaying agent done message - not needed in chat UI
@@ -2060,7 +2623,7 @@ class Gadget(QWidget):
             elif event_type == "error":
                 # Custom error event
                 error_msg = event['content'].get("message", "Unknown error")
-                self.chat_window.append_to_ai_response(f"\n[{event["agent_name"]}] [Error] {error_msg}\n", '31')
+                self.chat_window.append_to_ai_response(f"\n[{event["agent_name"]}] [Error] {error_msg}\n\n", '31')
                 self.chat_window.finish_ai_response()
                 # Stop sending animation on error
                 self.chat_window.stop_sending_state()
