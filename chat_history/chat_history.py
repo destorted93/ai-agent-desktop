@@ -65,7 +65,7 @@ class ChatHistoryManager:
         """Get OpenAI-compatible message list (unwrapped contents)."""
         return self._unwrap_entries(self.history)
 
-    def get_wrapped_history(self):
+    def get_wrapped_history(self, chat_id: str = "default", limit: int = 50, offset: int = 0):
         """Get full wrapped entries with metadata."""
         return self.history
 

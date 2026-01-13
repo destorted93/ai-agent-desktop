@@ -2328,14 +2328,14 @@ class Gadget(QWidget):
         menu.addAction(clear_chat_action)
 
         menu.addSeparator()
-        close_action = QAction("Close", self)
-        close_action.triggered.connect(self.quit_app)
-        menu.addAction(close_action)
-
-        menu.addSeparator()
         restart_action = QAction("Restart App", self)
         restart_action.triggered.connect(self.restart_app)
         menu.addAction(restart_action)
+
+        menu.addSeparator()
+        close_action = QAction("Close", self)
+        close_action.triggered.connect(self.quit_app)
+        menu.addAction(close_action)
 
         # Show menu below the main button
         menu.exec(self.main_btn.mapToGlobal(self.main_btn.rect().bottomLeft()))
