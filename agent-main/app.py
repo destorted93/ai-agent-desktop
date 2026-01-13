@@ -247,7 +247,7 @@ def handle_event(event, interactive_mode=True):
         
         if interactive_mode:
             image.show(title=f"Partial Image {item_id}-{sequence_number}")
-            print(color_text(f"[{event["agent_name"]}] Partial image saved to {image_path}", '32'), flush=True)
+            print(color_text(f"[{event['agent_name']}] Partial image saved to {image_path}", '32'), flush=True)
     
     elif event["type"] == "response.image_generation_call.completed":
         item_id = event['content']['data'].item_id
@@ -260,7 +260,7 @@ def handle_event(event, interactive_mode=True):
             partial_images[item_id][sequence_number].save(image_path, format="PNG")
             
             if interactive_mode:
-                print(color_text(f"[{event["agent_name"]}] Completed image saved to {image_path}", '32'), flush=True)
+                print(color_text(f"[{event['agent_name']}] Completed image saved to {image_path}", '32'), flush=True)
     
     elif event["type"] == "response.agent.done":
         # Reload history from file to respect any deletions/changes made during the run
@@ -273,38 +273,38 @@ def handle_event(event, interactive_mode=True):
         chat_history_manager.save_generated_images()
         
         if interactive_mode:
-            print(color_text(f"\n[{event["agent_name"]}] [Agent Done]", '32'), event['content'].get("message", ""), 
+            print(color_text(f"\n[{event['agent_name']}] [Agent Done]", '32'), event['content'].get("message", ""), 
                   f" (duration: {event['content'].get('duration_seconds', 0)} seconds)", flush=True)
     
     # Print to console in interactive mode
     if interactive_mode:
         if event["type"] == "response.reasoning_summary_part.added":
-            print(color_text(f"[{event["agent_name"]}] Thinking: ", '33'), end="", flush=True)
+            print(color_text(f"[{event['agent_name']}] Thinking: ", '33'), end="", flush=True)
         elif event["type"] == "response.reasoning_summary_text.delta":
             print(event['content']["delta"], end="", flush=True)
         elif event["type"] == "response.reasoning_summary_text.done":
             print("\n", flush=True)
         elif event["type"] == "response.content_part.added":
-            print(color_text(f"[{event["agent_name"]}] Assistant: ", '36'), end="", flush=True)
+            print(color_text(f"[{event['agent_name']}] Assistant: ", '36'), end="", flush=True)
         elif event["type"] == "response.output_text.delta":
             print(event['content']["delta"], end="", flush=True)
         elif event["type"] == "response.output_text.done":
             print("\n", flush=True)
         elif event["type"] == "response.output_item.done":
             if event['content']["item"].type == "function_call":
-                print(color_text(f"\n[{event["agent_name"]}] [Function Call] {event['content']['item'].name} with arguments: {event['content']['item'].arguments}", '35'), flush=True)
+                print(color_text(f"\n[{event['agent_name']}] [Function Call] {event['content']['item'].name} with arguments: {event['content']['item'].arguments}", '35'), flush=True)
             elif event["content"]["item"].type == "custom_tool_call":
-                print(color_text(f"\n[{event["agent_name"]}] [Custom Tool Call] {event['content']['item'].name} with arguments: {event['content']['item'].input}", '35'), flush=True)
+                print(color_text(f"\n[{event['agent_name']}] [Custom Tool Call] {event['content']['item'].name} with arguments: {event['content']['item'].input}", '35'), flush=True)
         elif event["type"] == "response.image_generation_call.generating":
-            print(color_text(f"\n[{event["agent_name"]}] [Image Generation]...", '34'), flush=True)
+            print(color_text(f"\n[{event['agent_name']}] [Image Generation]...", '34'), flush=True)
         elif event["type"] == "response.image_generation_call.partial_image":
-            print(color_text(f"\n[{event["agent_name"]}] [Image Generation] Partial Image {event['content']['data'].partial_image_index}...", '34'), flush=True)
+            print(color_text(f"\n[{event['agent_name']}] [Image Generation] Partial Image {event['content']['data'].partial_image_index}...", '34'), flush=True)
         elif event["type"] == "response.image_generation_call.completed":
-            print(color_text(f"\n[{event["agent_name"]}] [Image Generation] Completed", '34'), flush=True)
+            print(color_text(f"\n[{event['agent_name']}] [Image Generation] Completed", '34'), flush=True)
         elif event["type"] == "response.completed":
             usage = event['content'].get("usage", {})
             if usage:
-                print(color_text(f"\n[{event["agent_name"]}] [Usage] {usage}", '34'), flush=True)
+                print(color_text(f"\n[{event['agent_name']}] [Usage] {usage}", '34'), flush=True)
 
 
 def run_interactive():
@@ -369,10 +369,6 @@ def run_service(port=None):
         try:
             print(f"Fetching chat history for chat_id={chat_id}, limit={limit}, offset={offset}")
             entries = chat_history_manager.get_history(chat_id=chat_id, limit=limit, offset=offset)
-
-            # save history into a json file for debugging
-            with open("chat_history_debug.json", "w", encoding="utf-8") as f:
-                json.dump(entries, f, indent=2)
 
             return ChatHistoryResponse(
                 type="chat_history_response",

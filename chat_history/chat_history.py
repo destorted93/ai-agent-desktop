@@ -3,6 +3,7 @@ import json
 import uuid
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 
 from secure_storage import app_data_dir, write_encrypted_json, read_encrypted_json
 
@@ -10,7 +11,7 @@ IMAGES_FILE = os.path.join(os.path.dirname(__file__), 'generated_images.json')
 SECURE_CHAT_HISTORY_FILE = app_data_dir() / 'chat_history.enc'
 
 class ChatHistoryManager:
-    def __init__(self, file_path: str | None = None, images_path: str = IMAGES_FILE):
+    def __init__(self, file_path: Optional[str] = None, images_path: Optional[str] = IMAGES_FILE):
         # Always use secure encrypted path
         self.secure_file_path = Path(SECURE_CHAT_HISTORY_FILE)
         self.images_path = images_path

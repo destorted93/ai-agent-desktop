@@ -14,8 +14,8 @@ import websockets
 import traceback
 from PyQt6.QtWidgets import (QApplication, QWidget, QPushButton, QVBoxLayout, 
                               QHBoxLayout, QMenu, QTextEdit, QLineEdit, QScrollArea,
-                              QLabel, QFrame, QSizePolicy, QLayout, QDialog, QMessageBox, QTextBrowser, QSizePolicy)
-from PyQt6.QtGui import QAction, QTextCursor, QFont, QTextOption, QKeyEvent, QPainter, QColor, QPen, QPixmap
+                              QLabel, QFrame, QSizePolicy, QLayout, QDialog, QMessageBox, QFileDialog, QTextBrowser, QSizePolicy)
+from PyQt6.QtGui import QAction, QTextCursor, QFont, QTextOption, QKeyEvent, QPainter, QColor, QPen, QPixmap, QSyntaxHighlighter, QTextCharFormat
 from PyQt6.QtCore import Qt, QPoint, QEvent, pyqtSignal, QObject, QThread, pyqtSlot, QTimer, QRect, QSize
 
 import markdown
@@ -1898,9 +1898,166 @@ class SettingsWindow(QDialog):
         layout.addStretch(1)
         
 
+class ChatHistoryJsonWindow(QDialog):
+    """Debug window to display raw chat history JSON (select/copy friendly)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Chat History (JSON)")
+        self.setModal(False)
+        self.resize(900, 700)
+
+        # Make sure closing doesn't destroy the window (we treat it like a utility panel)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        self.save_as_btn = QPushButton("Save As…")
+        self.close_btn = QPushButton("Close")
+        actions.addWidget(self.save_as_btn)
+        actions.addWidget(self.close_btn)
+        layout.addLayout(actions)
+
+        self.text = QTextEdit()
+        self.text.setReadOnly(True)
+        self.text.setAcceptRichText(False)
+        self.text.setFont(QFont("Consolas", 10))
+        layout.addWidget(self.text)
+
+        self._highlighter = JsonSyntaxHighlighter(self.text.document())
+
+        self.save_as_btn.clicked.connect(self.save_as)
+        self.close_btn.clicked.connect(self.close)
+
+    def set_json_text(self, text: str):
+        self.text.setPlainText(text)
+
+    def closeEvent(self, event):
+        """Override close to hide and remember position."""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        pos = self.pos()
+        settings.setValue("history_json_window_pos", (pos.x(), pos.y()))
+        self.hide()
+        event.ignore()
+
+    def hideEvent(self, event):
+        """Save position when hidden."""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        pos = self.pos()
+        settings.setValue("history_json_window_pos", (pos.x(), pos.y()))
+        super().hideEvent(event)
+
+    def showEvent(self, event):
+        """Restore position when shown, if available."""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        pos = settings.value("history_json_window_pos", None)
+        if pos is not None:
+            try:
+                x, y = map(int, str(pos).strip('()').split(','))
+                self.move(x, y)
+            except Exception:
+                pass
+        super().showEvent(event)
+
+    def save_as(self):
+        """Save the currently displayed JSON to a file (default .json, but user can change)."""
+        import datetime
+        default_name = f"chat_history_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        filters = "JSON Files (*.json);;Text Files (*.txt);;All Files (*.*)"
+        file_path, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Save Chat History",
+            default_name,
+            filters,
+            "JSON Files (*.json)",
+        )
+        if not file_path:
+            return
+
+        # If the user picked the JSON filter and didn't type an extension, add .json
+        if selected_filter.startswith("JSON") and os.path.splitext(file_path)[1] == "":
+            file_path += ".json"
+
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(self.text.toPlainText())
+                if not self.text.toPlainText().endswith("\n"):
+                    f.write("\n")
+        except Exception as e:
+            QMessageBox.warning(self, "Save Failed", f"Could not save file:\n{e}")
+
+
+class JsonSyntaxHighlighter(QSyntaxHighlighter):
+    """Very small JSON syntax highlighter (good enough for debugging)."""
+
+    def __init__(self, document):
+        super().__init__(document)
+
+        self._key_format = QTextCharFormat()
+        self._key_format.setForeground(QColor("#9cdcfe"))  # light blue
+
+        self._string_format = QTextCharFormat()
+        self._string_format.setForeground(QColor("#ce9178"))  # orange
+
+        self._number_format = QTextCharFormat()
+        self._number_format.setForeground(QColor("#b5cea8"))  # green
+
+        self._bool_format = QTextCharFormat()
+        self._bool_format.setForeground(QColor("#569cd6"))  # blue
+        self._bool_format.setFontWeight(QFont.Weight.DemiBold)
+
+        self._null_format = QTextCharFormat()
+        self._null_format.setForeground(QColor("#c586c0"))  # purple
+        self._null_format.setFontWeight(QFont.Weight.DemiBold)
+
+        self._punct_format = QTextCharFormat()
+        self._punct_format.setForeground(QColor("#d4d4d4"))
+
+        # Regex patterns (simple, not a full JSON parser)
+        self._re_key = re.compile(r'"([^"\\]|\\.)*"(?=\s*:)')
+        self._re_string = re.compile(r'"([^"\\]|\\.)*"')
+        self._re_number = re.compile(r'\b-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?\b')
+        self._re_bool = re.compile(r'\b(?:true|false)\b')
+        self._re_null = re.compile(r'\bnull\b')
+        self._re_punct = re.compile(r'[\{\}\[\]:,]')
+
+    def highlightBlock(self, text: str):
+        # Punctuation
+        for m in self._re_punct.finditer(text):
+            self.setFormat(m.start(), m.end() - m.start(), self._punct_format)
+
+        # Numbers
+        for m in self._re_number.finditer(text):
+            self.setFormat(m.start(), m.end() - m.start(), self._number_format)
+
+        # Booleans
+        for m in self._re_bool.finditer(text):
+            self.setFormat(m.start(), m.end() - m.start(), self._bool_format)
+
+        # null
+        for m in self._re_null.finditer(text):
+            self.setFormat(m.start(), m.end() - m.start(), self._null_format)
+
+        # Strings (values)
+        for m in self._re_string.finditer(text):
+            self.setFormat(m.start(), m.end() - m.start(), self._string_format)
+
+        # Keys (override string format for keys)
+        for m in self._re_key.finditer(text):
+            self.setFormat(m.start(), m.end() - m.start(), self._key_format)
+
+
 class Gadget(QWidget):
     # Signals for thread-safe UI updates
     history_loaded = pyqtSignal(list)
+    history_json_loaded = pyqtSignal(str)
     agent_event_received = pyqtSignal(dict)
     transcription_received = pyqtSignal(str)
     
@@ -1936,6 +2093,8 @@ class Gadget(QWidget):
         # Chat window
         self.chat_window = ChatWindow(self)
         self.chat_window.hide()
+        # Separate JSON history window (debug)
+        self.history_json_window = ChatHistoryJsonWindow(self)
         # Settings window (lazy created)
         self.settings_window = None
         self.agent_url = os.environ.get("AGENT_URL", "http://127.0.0.1:6002")
@@ -1946,6 +2105,7 @@ class Gadget(QWidget):
 
         # Connect signals to slots for thread-safe UI updates
         self.history_loaded.connect(self.display_chat_history)
+        self.history_json_loaded.connect(self._display_history_json)
         self.agent_event_received.connect(self.handle_agent_event)
         self.transcription_received.connect(self.chat_window.send_message)
 
@@ -2158,6 +2318,11 @@ class Gadget(QWidget):
         menu.addAction(settings_action)
 
         menu.addSeparator()
+        clear_chat_action = QAction("Open Chat History", self)
+        clear_chat_action.triggered.connect(self.open_chat_history)
+        menu.addAction(clear_chat_action)
+
+        menu.addSeparator()
         clear_chat_action = QAction("Clear Chat History", self)
         clear_chat_action.triggered.connect(self.clear_chat_all)
         menu.addAction(clear_chat_action)
@@ -2367,6 +2532,38 @@ class Gadget(QWidget):
         # Force container update
         self.chat_window.chat_container.updateGeometry()
         self.chat_window.update()
+
+    def open_chat_history(self):
+        """Fetch chat history from agent service and display it in a separate window"""
+        if self.history_json_window:
+            self.history_json_window.show()
+            self.history_json_window.raise_()
+            self.history_json_window.activateWindow()
+
+        self._fetch_history_json_async()
+
+    def _fetch_history_json_async(self):
+        """Fetch chat history on a worker thread and emit it as JSON text."""
+
+        def _fetch():
+            try:
+                history = self.agent_service.get_history(chat_id="default")
+                json_text = json.dumps(history, indent=2, ensure_ascii=False)
+                # Emit signal to display on main thread
+                self.history_json_loaded.emit(json_text)
+            except Exception as e:
+                print(f"Failed to fetch chat history: {e}")
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    @pyqtSlot(str)
+    def _display_history_json(self, json_text: str):
+        if not self.history_json_window:
+            return
+        self.history_json_window.set_json_text(json_text)
+        # Don't force-show/raise on background refresh; preserve user window position/focus.
+        # The window is explicitly shown via open_chat_history().
+
     
     def clear_chat_all(self):
         """Clear chat history both locally and on the server."""
@@ -2382,6 +2579,10 @@ class Gadget(QWidget):
             # Clear local UI
             if self.chat_window:
                 self.chat_window.clear_chat()
+
+            # Clear debug JSON history window content (UI-only)
+            if self.history_json_window:
+                self.history_json_window.set_json_text("[]")
             
             # Send request to server to clear history
             def _clear_on_server():
@@ -2389,6 +2590,9 @@ class Gadget(QWidget):
                     success = self.agent_service.clear_history(chat_id="default")
                     if success:
                         print("Chat history cleared on server")
+                        # If the JSON history window is open, re-fetch to confirm backend state.
+                        if self.history_json_window and self.history_json_window.isVisible():
+                            self._fetch_history_json_async()
                     else:
                         print(f"Failed to clear chat history on server")
                 except Exception as e:
@@ -2556,7 +2760,7 @@ class Gadget(QWidget):
             event_type = event.get("type", "")
             
             if event_type == "response.reasoning_summary_part.added":
-                self.chat_window.append_to_ai_response(f"[{event["agent_name"]}] Thinking:\n\n", '33')
+                self.chat_window.append_to_ai_response(f"[{event['agent_name']}] Thinking:\n\n", '33')
             
             elif event_type == "response.reasoning_summary_text.delta":
                 delta = event['content'].get("delta", "")
@@ -2566,7 +2770,7 @@ class Gadget(QWidget):
                 self.chat_window.append_to_ai_response("\n\n")
             
             elif event_type == "response.content_part.added":
-                self.chat_window.append_to_ai_response(f"[{event["agent_name"]}] Assistant:\n\n", '36')
+                self.chat_window.append_to_ai_response(f"[{event['agent_name']}] Assistant:\n\n", '36')
             
             elif event_type == "response.output_text.delta":
                 delta = event['content'].get("delta", "")
@@ -2587,20 +2791,20 @@ class Gadget(QWidget):
                         self.chat_window.finish_ai_response()
                         self.chat_window.start_ai_response()
                         self.chat_window.append_to_ai_response(
-                            f"[{event["agent_name"]}] [Function Call] {func_name}\n",
+                            f"[{event['agent_name']}] [Function Call] {func_name}\n",
                             '35'
                         )
                         if func_args:
-                            self.chat_window.append_to_ai_response(f"[{event["agent_name"]}] Arguments: {func_args}\n\n")
+                            self.chat_window.append_to_ai_response(f"[{event['agent_name']}] Arguments: {func_args}\n\n")
                         self.chat_window.finish_ai_response()
                         # Start a new widget for the next response
                         self.chat_window.start_ai_response()
             
             elif event_type == "response.image_generation_call.generating":
-                self.chat_window.append_to_ai_response(f"\n[{event["agent_name"]}] [Image Generation]...\n", '34')
+                self.chat_window.append_to_ai_response(f"\n[{event['agent_name']}] [Image Generation]...\n", '34')
             
             elif event_type == "response.image_generation_call.completed":
-                self.chat_window.append_to_ai_response(f"[{event["agent_name"]}] [Image Generation] Completed\n\n", '34')
+                self.chat_window.append_to_ai_response(f"[{event['agent_name']}] [Image Generation] Completed\n\n", '34')
             
             elif event_type == "response.completed":
                 # Skip displaying usage info - not needed in chat UI
@@ -2609,10 +2813,13 @@ class Gadget(QWidget):
             elif event_type == "response.agent.done":
                 # Check if it was stopped by user
                 if event['content'].get("stopped"):
-                    self.chat_window.append_to_ai_response(f"\n[{event["agent_name"]}] [Stopped by user]\n\n", '31')
+                    self.chat_window.append_to_ai_response(f"\n[{event['agent_name']}] [Stopped by user]\n\n", '31')
                     self.chat_window.finish_ai_response()
                     self.chat_window.stop_sending_state()
                 # Otherwise skip displaying agent done message - not needed in chat UI
+                # If the history JSON window is open, refresh it for debugging.
+                if self.history_json_window and self.history_json_window.isVisible():
+                    self._fetch_history_json_async()
             
             elif event_type == "stream.finished":
                 # Custom event to finish AI response
@@ -2623,13 +2830,13 @@ class Gadget(QWidget):
             elif event_type == "error":
                 # Custom error event
                 error_msg = event['content'].get("message", "Unknown error")
-                self.chat_window.append_to_ai_response(f"\n[{event["agent_name"]}] [Error] {error_msg}\n\n", '31')
+                self.chat_window.append_to_ai_response(f"\n[{event['agent_name']}] [Error] {error_msg}\n\n", '31')
                 self.chat_window.finish_ai_response()
                 # Stop sending animation on error
                 self.chat_window.stop_sending_state()
         
         except Exception as e:
-            print(f"[{event["agent_name"]}] Error in handle_agent_event: {e}")
+            print(f"[{event['agent_name']}] Error in handle_agent_event: {e}")
             import traceback
             traceback.print_exc()
 

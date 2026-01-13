@@ -2,13 +2,14 @@ import os
 import json
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 
 from secure_storage import app_data_dir, write_encrypted_json, read_encrypted_json
 
 SECURE_MEMORY_FILE = app_data_dir() / 'memories.enc'
 
 class MemoryManager:
-    def __init__(self, file_path: str | None = None):
+    def __init__(self, file_path: Optional[str] = None):
         self.secure_file_path = Path(SECURE_MEMORY_FILE)
         self.memories = self.load_memories()
 
