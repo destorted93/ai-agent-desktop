@@ -2,9 +2,10 @@ import os
 import traceback
 from PyQt6.QtWidgets import (QApplication, QWidget, QPushButton, QVBoxLayout, 
                               QHBoxLayout, QMenu,  QScrollArea,
-                              QLabel, QSizePolicy, QLayout, QDialog, QMessageBox, QTextBrowser, QSizePolicy)
+                              QLabel, QSizePolicy, QLayout, QDialog, QMessageBox, QTextBrowser, QSizePolicy,
+                              QTextEdit, QDialogButtonBox)
 from PyQt6.QtGui import QAction, QFont
-from PyQt6.QtCore import Qt, QPoint, QEvent, QTimer, QRect, QSize
+from PyQt6.QtCore import Qt, QPoint, QEvent, QTimer, QRect, QSize, pyqtSignal
 
 import markdown
 import re
@@ -15,6 +16,100 @@ from pygments.formatters import HtmlFormatter
 
 from .multiline_input import MultilineInput
 from .screenshot_selector import ScreenshotSelector
+
+
+class EditMessageDialog(QDialog):
+    """Dialog for editing a user message before resending."""
+    
+    def __init__(self, current_text: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Message")
+        self.setModal(True)
+        self.resize(500, 300)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(10)
+        
+        # Info label
+        info_label = QLabel("Edit your message below. This will delete the original message\nand all responses after it, then send your edited message.")
+        info_label.setStyleSheet("QLabel { color: #888888; font-size: 12px; }")
+        layout.addWidget(info_label)
+        
+        # Text editor
+        self.text_edit = QTextEdit()
+        self.text_edit.setPlainText(current_text)
+        self.text_edit.setStyleSheet("""
+            QTextEdit {
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                border: 1px solid #3d3d3d;
+                border-radius: 5px;
+                padding: 10px;
+                font-size: 13px;
+                font-family: 'Segoe UI', sans-serif;
+            }
+        """)
+        layout.addWidget(self.text_edit)
+        
+        # Button box
+        button_box = QDialogButtonBox()
+        
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3d3d3d;
+                color: #d4d4d4;
+                border: none;
+                border-radius: 5px;
+                padding: 8px 20px;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #4d4d4d;
+            }
+        """)
+        
+        self.send_btn = QPushButton("Send Edited Message")
+        self.send_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0e639c;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                padding: 8px 20px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1177bb;
+            }
+        """)
+        
+        button_box.addButton(self.cancel_btn, QDialogButtonBox.ButtonRole.RejectRole)
+        button_box.addButton(self.send_btn, QDialogButtonBox.ButtonRole.AcceptRole)
+        
+        self.cancel_btn.clicked.connect(self.reject)
+        self.send_btn.clicked.connect(self.accept)
+        
+        layout.addWidget(button_box)
+        
+        # Style the dialog
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #252526;
+            }
+        """)
+        
+        # Focus text edit and select all
+        self.text_edit.setFocus()
+        self.text_edit.selectAll()
+    
+    def get_text(self) -> str:
+        """Get the edited text."""
+        return self.text_edit.toPlainText()
+
 
 class FlowLayout(QLayout):
     """Custom layout that wraps items to multiple lines like a flow layout."""
@@ -99,6 +194,11 @@ class FlowLayout(QLayout):
 
 class ChatWindow(QWidget):
     """Separate chat window that maintains its state."""
+    
+    # Signals for message operations (emitted to parent FloatingWidget)
+    delete_message_requested = pyqtSignal(str)  # entry_id
+    edit_message_requested = pyqtSignal(str, str)  # entry_id, new_text
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
@@ -404,13 +504,26 @@ class ChatWindow(QWidget):
         self.chat_history = []
         self.current_ai_widget = None
         
+        # Track pending user message (sent but not yet saved to storage)
+        self.pending_user_message_widget = None
+        
         self.parent_widget = parent
     
-    def add_user_message(self, text):
-        """Add user message to chat (right-aligned, max 80% width) with hover actions."""
+    def add_user_message(self, text, entry_id=None):
+        """Add user message to chat (right-aligned, max 80% width) with hover actions.
+        
+        Args:
+            text: The message text to display
+            entry_id: Optional entry ID from storage (for delete/edit operations)
+        """
         from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QPushButton, QWidget, QLabel
         msg_widget = QWidget()
         msg_widget.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        
+        # Store entry_id and text as properties on the widget for later access
+        msg_widget.entry_id = entry_id
+        msg_widget.message_text = text
+        
         msg_layout = QHBoxLayout(msg_widget)
         msg_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -437,26 +550,12 @@ class ChatWindow(QWidget):
         """)
         msg_box_layout.addWidget(msg_label)
 
-        # Actions row (hidden by default, shown on hover)
+        # Actions row (invisible by default, shown on hover - uses opacity to avoid layout shift)
         actions_row = QWidget()
+        actions_row.setFixedHeight(22)  # Fixed height to prevent layout shift
         actions_layout = QHBoxLayout(actions_row)
-        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setContentsMargins(0, 2, 0, 0)
         actions_layout.setSpacing(6)
-
-
-        from PyQt6.QtWidgets import QMessageBox
-        def show_action_popup(action_name):
-            # Find the index of this message widget in the chat layout
-            idx = -1
-            for i in range(self.chat_layout.count()):
-                if self.chat_layout.itemAt(i).widget() is msg_widget:
-                    idx = i
-                    break
-            QMessageBox.information(
-                self,
-                f"{action_name} Message",
-                f"Action: {action_name}\nIndex: {idx}\nText: {text}"
-            )
 
         style_sheet = """
             QPushButton {
@@ -470,37 +569,71 @@ class ChatWindow(QWidget):
                 background-color: #4da6ff;
             }
         """
+        
+        style_sheet_disabled = """
+            QPushButton {
+                background-color: rgba(40, 40, 40, 60);
+                border: none;
+                border-radius: 11px;
+                padding: 0px;
+                font-size: 14px;
+                color: #666666;
+            }
+        """
 
         # Align actions to the right
         actions_layout.addStretch(1)
 
-        # Use Unicode emoji for more intuitive icons
-        # Copy: 📋, Edit: ✏️, Remove: 🗑️
+        # Copy button - copies message text to clipboard (always enabled)
         copy_btn = QPushButton("📋")
         copy_btn.setToolTip("Copy message")
         copy_btn.setFixedSize(22, 22)
         copy_btn.setStyleSheet(style_sheet)
-        copy_btn.clicked.connect(lambda: show_action_popup("Copy message"))
+        copy_btn.clicked.connect(lambda: self._copy_message(text))
         actions_layout.addWidget(copy_btn)
 
+        # Edit button - opens edit dialog, then deletes and resends
         edit_btn = QPushButton("✏️")
-        edit_btn.setToolTip("Edit message")
         edit_btn.setFixedSize(22, 22)
-        edit_btn.setStyleSheet(style_sheet)
-        edit_btn.clicked.connect(lambda: show_action_popup("Edit message"))
+        if entry_id:
+            edit_btn.setToolTip("Edit message (will regenerate response)")
+            edit_btn.setStyleSheet(style_sheet)
+            edit_btn.clicked.connect(lambda: self._edit_message(entry_id, text))
+        else:
+            edit_btn.setToolTip("Cannot edit - message not yet saved")
+            edit_btn.setStyleSheet(style_sheet_disabled)
+            edit_btn.setEnabled(False)
         actions_layout.addWidget(edit_btn)
 
+        # Remove button - deletes this message and all subsequent
         remove_btn = QPushButton("🗑️")
-        remove_btn.setToolTip("Remove message")
         remove_btn.setFixedSize(22, 22)
-        remove_btn.setStyleSheet(style_sheet)
-        remove_btn.clicked.connect(lambda: show_action_popup("Remove message"))
+        if entry_id:
+            remove_btn.setToolTip("Remove message and all responses after it")
+            remove_btn.setStyleSheet(style_sheet)
+            remove_btn.clicked.connect(lambda: self._delete_message(entry_id, text))
+        else:
+            remove_btn.setToolTip("Cannot remove - message not yet saved")
+            remove_btn.setStyleSheet(style_sheet_disabled)
+            remove_btn.setEnabled(False)
         actions_layout.addWidget(remove_btn)
+        
+        # Store button references for later enabling (when entry_id becomes available)
+        msg_widget.edit_btn = edit_btn
+        msg_widget.delete_btn = remove_btn
+        msg_widget.style_sheet_enabled = style_sheet
+        
+        # Track as pending if no entry_id yet
+        if entry_id is None:
+            self.pending_user_message_widget = msg_widget
 
-        actions_row.hide()
+        # Start with buttons invisible (but still in layout to prevent shifting)
+        for btn in [copy_btn, edit_btn, remove_btn]:
+            btn.setVisible(False)
+        
         msg_box_layout.addWidget(actions_row)
 
-        # Prevent shifting: actions row is always present but hidden, so layout height is stable
+        # Prevent shifting: actions row is always present with fixed height
         msg_box.setStyleSheet("""
             QWidget {
                 margin-bottom: 0px;
@@ -509,18 +642,145 @@ class ChatWindow(QWidget):
 
         msg_layout.addWidget(msg_box, 4)
 
-        # Hover event handling
+        # Hover event handling - toggle button visibility instead of hiding the row
         def eventFilter(obj, event):
             if event.type() == QEvent.Type.Enter:
-                actions_row.show()
+                for btn in [copy_btn, edit_btn, remove_btn]:
+                    btn.setVisible(True)
             elif event.type() == QEvent.Type.Leave:
-                actions_row.hide()
+                for btn in [copy_btn, edit_btn, remove_btn]:
+                    btn.setVisible(False)
             return False
         msg_box.installEventFilter(msg_box)
         msg_box.eventFilter = eventFilter
 
         self.chat_layout.addWidget(msg_widget)
         self.scroll_to_bottom()
+    
+    def update_last_user_message_id(self, entry_id: str):
+        """Update the entry_id of the pending user message widget.
+        
+        This is called after the agent finishes and the message is saved to storage,
+        so the user can now edit/delete this message.
+        
+        Args:
+            entry_id: The storage entry ID for this message
+        """
+        if self.pending_user_message_widget is None:
+            print(f"[ChatWindow] Warning: No pending user message widget to update")
+            return
+        
+        widget = self.pending_user_message_widget
+        widget.entry_id = entry_id
+        self._enable_message_actions(widget)
+        
+        # Clear the pending reference
+        self.pending_user_message_widget = None
+        print(f"[ChatWindow] Updated widget entry_id to: {entry_id}")
+    
+    def _enable_message_actions(self, msg_widget):
+        """Enable the edit and delete buttons for a message widget after it gets an ID."""
+        entry_id = msg_widget.entry_id
+        text = msg_widget.message_text
+        style_sheet = getattr(msg_widget, 'style_sheet_enabled', '')
+        
+        # Enable edit button
+        if hasattr(msg_widget, 'edit_btn'):
+            btn = msg_widget.edit_btn
+            btn.setEnabled(True)
+            btn.setToolTip("Edit message (will regenerate response)")
+            btn.setStyleSheet(style_sheet)
+            try:
+                btn.clicked.disconnect()
+            except:
+                pass
+            btn.clicked.connect(lambda checked, eid=entry_id, t=text: self._edit_message(eid, t))
+        
+        # Enable delete button
+        if hasattr(msg_widget, 'delete_btn'):
+            btn = msg_widget.delete_btn
+            btn.setEnabled(True)
+            btn.setToolTip("Remove message and all responses after it")
+            btn.setStyleSheet(style_sheet)
+            try:
+                btn.clicked.disconnect()
+            except:
+                pass
+            btn.clicked.connect(lambda checked, eid=entry_id, t=text: self._delete_message(eid, t))
+    
+    def _copy_message(self, text: str):
+        """Copy message text to clipboard."""
+        clipboard = QApplication.clipboard()
+        clipboard.setText(text)
+        self._show_toast("Copied!")
+        print(f"[ChatWindow] Copied message to clipboard")
+    
+    def _show_toast(self, message: str, duration_ms: int = 1000):
+        """Show a floating toast notification that fades out."""
+        toast = QLabel(message, self)
+        toast.setStyleSheet("""
+            QLabel {
+                background-color: rgba(50, 50, 50, 230);
+                color: #4da6ff;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+        """)
+        toast.adjustSize()
+        
+        # Position at bottom center of chat window
+        x = (self.width() - toast.width()) // 2
+        y = self.height() - toast.height() - 80
+        toast.move(x, y)
+        toast.show()
+        
+        # Fade out and delete after duration
+        QTimer.singleShot(duration_ms, toast.deleteLater)
+    
+    def _delete_message(self, entry_id: str, text: str):
+        """Request deletion of message and all subsequent messages."""
+        if not entry_id:
+            QMessageBox.warning(
+                self,
+                "Cannot Delete",
+                "This message doesn't have an ID (it may be a new unsaved message)."
+            )
+            return
+        
+        # Confirm deletion
+        reply = QMessageBox.question(
+            self,
+            "Delete Message",
+            f"Delete this message and all messages after it?\n\n\"{text[:100]}{'...' if len(text) > 100 else ''}\"\n\nThis action cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            print(f"[ChatWindow] Requesting delete from entry_id: {entry_id}")
+            self.delete_message_requested.emit(entry_id)
+    
+    def _edit_message(self, entry_id: str, current_text: str):
+        """Open edit dialog and request edit operation."""
+        if not entry_id:
+            QMessageBox.warning(
+                self,
+                "Cannot Edit",
+                "This message doesn't have an ID (it may be a new unsaved message)."
+            )
+            return
+        
+        # Show edit dialog
+        dialog = EditMessageDialog(current_text, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            new_text = dialog.get_text()
+            if new_text and new_text.strip():
+                print(f"[ChatWindow] Requesting edit for entry_id: {entry_id}")
+                self.edit_message_requested.emit(entry_id, new_text.strip())
+            else:
+                QMessageBox.warning(self, "Empty Message", "Message cannot be empty.")
     
     class CodeBlockWidget(QWidget):
         """Custom widget for displaying code blocks with copy button and syntax highlighting."""
@@ -704,6 +964,9 @@ class ChatWindow(QWidget):
         self.current_ai_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.current_ai_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         
+        # Start with zero height - will expand as content is added
+        self.current_ai_widget.setFixedHeight(0)
+        
         font = QFont('Consolas', 10)
         self.current_ai_widget.setFont(font)
         
@@ -742,7 +1005,7 @@ class ChatWindow(QWidget):
         doc = text_browser.document()
         doc.setTextWidth(text_browser.viewport().width())
         height = doc.size().height()
-        text_browser.setFixedHeight(int(height + 20))
+        text_browser.setFixedHeight(int(height + 25))
 
     def append_to_ai_response(self, text, color=None):
         """Append text to the current AI response - just render as markdown, don't parse code blocks yet."""
@@ -975,7 +1238,7 @@ class ChatWindow(QWidget):
         doc = text_browser.document()
         doc.setTextWidth(text_browser.viewport().width())
         height = doc.size().height()
-        text_browser.setFixedHeight(int(height + 20))
+        text_browser.setFixedHeight(int(height + 25))
         
         return text_browser
 

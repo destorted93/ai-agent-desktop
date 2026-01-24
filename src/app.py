@@ -192,13 +192,21 @@ class Application(QObject):
                 # Handle agent done event - save history here in the app
                 if event.get("type") == "response.agent.done":
                     content = event.get("content", {})
+                    saved_entry_ids = []
+                    user_entry_id = None
                     
                     # Save chat history
                     chat_history = content.get("chat_history", [])
                     if chat_history:
                         try:
-                            self.history_manager.append_entries(chat_history)
+                            saved_entry_ids = self.history_manager.append_entries(chat_history)
                             print(f"[APP] Saved {len(chat_history)} entries to chat history")
+                            
+                            # Find the user message ID (first entry with role="user")
+                            for i, entry in enumerate(chat_history):
+                                if entry.get("role") == "user" and i < len(saved_entry_ids):
+                                    user_entry_id = saved_entry_ids[i]
+                                    break
                         except Exception as e:
                             print(f"[APP] Failed to save chat history: {e}")
                     
@@ -210,6 +218,19 @@ class Application(QObject):
                             print(f"[APP] Saved {len(generated_images)} generated images")
                         except Exception as e:
                             print(f"[APP] Failed to save generated images: {e}")
+                    
+                    # Add saved IDs to the event content for UI to use
+                    enriched_event = {
+                        "type": event.get("type"),
+                        "agent_name": event.get("agent_name"),
+                        "content": {
+                            **content,
+                            "saved_entry_ids": saved_entry_ids,
+                            "user_entry_id": user_entry_id,
+                        }
+                    }
+                    yield enriched_event
+                    continue
                 
                 yield event
             
@@ -228,8 +249,40 @@ class Application(QObject):
             yield {"type": "stream.finished", "agent_name": "System", "content": {}}
     
     def get_chat_history(self, chat_id: str = "default") -> List[Dict]:
-        """Get chat history."""
+        """Get chat history (unwrapped, for API use)."""
         return self.history_manager.get_history(chat_id=chat_id)
+    
+    def get_wrapped_chat_history(self, chat_id: str = "default") -> List[Dict]:
+        """Get wrapped chat history with IDs and metadata (for UI display)."""
+        return self.history_manager.get_wrapped_history()
+    
+    def delete_messages_from_id(self, entry_id: str, chat_id: str = "default") -> Dict[str, Any]:
+        """Delete a message and all subsequent messages.
+        
+        Args:
+            entry_id: The ID of the message to start deletion from
+            chat_id: Chat session ID (for future multi-chat support)
+            
+        Returns:
+            Dict with status, deleted_count, and remaining_count
+        """
+        wrapped = self.history_manager.get_wrapped_history()
+        
+        # Find the index of the target entry
+        target_idx = None
+        for i, entry in enumerate(wrapped):
+            if entry.get("id") == entry_id:
+                target_idx = i
+                break
+        
+        if target_idx is None:
+            return {"status": "error", "message": "Entry not found", "deleted_count": 0}
+        
+        # Get IDs to delete (from target_idx to end)
+        ids_to_delete = [e["id"] for e in wrapped[target_idx:]]
+        result = self.history_manager.delete_entries(ids_to_delete)
+        print(f"[APP] Deleted {result.get('deleted_count', 0)} messages from ID {entry_id}")
+        return result
     
     def clear_chat_history(self, chat_id: str = "default") -> bool:
         """Clear chat history."""

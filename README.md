@@ -70,6 +70,7 @@ src/
 - Encrypted, persistent history
 - Token usage tracking
 - Stop generation at any time
+- Copy, edit, or delete user messages
 
 ### 🛠️ Agent Tools
 - **Memory**: Remember user preferences
