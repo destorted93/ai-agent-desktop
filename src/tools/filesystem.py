@@ -32,17 +32,13 @@ class ReadFolderTool:
                         "type": "string",
                         "description": "Path relative to project root. Use '.' for root.",
                     },
-                    "recursive": {
-                        "type": "boolean",
-                        "description": "Whether to list recursively (default: false).",
-                    },
                 },
-                "required": ["relative_path", "recursive"],
+                "required": ["relative_path"],
                 "additionalProperties": False,
             },
         }
     
-    def run(self, relative_path: str, recursive: bool = False) -> Dict[str, Any]:
+    def run(self, relative_path: str) -> Dict[str, Any]:
         if not _is_safe_path(self.root_path, relative_path):
             return {"status": "error", "message": "Path outside project scope"}
         
@@ -50,25 +46,11 @@ class ReadFolderTool:
         if not os.path.isdir(full_path):
             return {"status": "error", "message": "Not a directory"}
         
-        try:
-            items = []
-            if recursive:
-                for root, dirs, files in os.walk(full_path):
-                    rel_root = os.path.relpath(root, full_path)
-                    for d in dirs:
-                        items.append({"type": "dir", "path": os.path.join(rel_root, d)})
-                    for f in files:
-                        items.append({"type": "file", "path": os.path.join(rel_root, f)})
-            else:
-                for item in os.listdir(full_path):
-                    item_path = os.path.join(full_path, item)
-                    items.append({
-                        "type": "dir" if os.path.isdir(item_path) else "file",
-                        "name": item,
-                    })
-            return {"status": "success", "items": items}
-        except Exception as e:
-            return {"status": "error", "message": str(e)}
+        if not os.path.exists(full_path):
+            return {"status": "error", "message": "Folder not found"}
+        
+        items = os.listdir(full_path)
+        return {"status": "success", "items": items}
 
 
 class ReadFileTool:

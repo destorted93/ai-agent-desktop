@@ -201,26 +201,16 @@ class Agent:
                 
                 # Add file contents if provided
                 if files:
-                    file_context_parts = []
+                    file_paths_list = []
                     for file_path in files:
-                        try:
-                            import os
-                            if os.path.isfile(file_path):
-                                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                                    file_content = f.read()
-                                file_context_parts.append(f"--- File: {file_path} ---\n{file_content}\n--- End of {file_path} ---")
-                            elif os.path.isdir(file_path):
-                                # For directories, list contents
-                                file_list = []
-                                for root, dirs, filenames in os.walk(file_path):
-                                    for fname in filenames[:50]:  # Limit files
-                                        file_list.append(os.path.join(root, fname))
-                                file_context_parts.append(f"--- Directory: {file_path} ---\nFiles:\n" + "\n".join(file_list[:50]) + "\n--- End of directory ---")
-                        except Exception as e:
-                            file_context_parts.append(f"--- File: {file_path} (error reading: {e}) ---")
+                        import os
+                        if os.path.isfile(file_path):
+                            file_paths_list.append(f"--- File: {file_path}")
+                        elif os.path.isdir(file_path):
+                            file_paths_list.append(f"--- Directory: {file_path}")
                     
-                    if file_context_parts:
-                        content.append({"type": "input_text", "text": "Attached files:\n\n" + "\n\n".join(file_context_parts) + "\n\n"})
+                    if file_paths_list:
+                        content.append({"type": "input_text", "text": "\nAttached files:\n" + "\n".join(file_paths_list) + "\n\n"})
                 
                 if message and message.strip():
                     content.append({"type": "input_text", "text": message})

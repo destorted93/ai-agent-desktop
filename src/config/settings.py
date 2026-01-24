@@ -35,12 +35,12 @@ class UISettings(BaseModel):
 class AgentSettings(BaseModel):
     """Agent-related settings."""
     
-    model_name: str = Field(default="gpt-5", description="OpenAI model name")
+    model_name: str = Field(default="gpt-5.1", description="OpenAI model name")
     temperature: float = Field(default=1.0, ge=0.0, le=2.0, description="Model temperature")
     max_turns: int = Field(default=32, ge=1, le=100, description="Max agent turns per request")
     reasoning_effort: str = Field(default="medium", description="Reasoning effort (low/medium/high)")
     reasoning_summary: str = Field(default="auto", description="Reasoning summary mode")
-    text_verbosity: str = Field(default="low", description="Response verbosity")
+    text_verbosity: str = Field(default="medium", description="Response verbosity")
     stream_responses: bool = Field(default=True, description="Stream responses")
     custom_system_prompt: Optional[str] = Field(default=None, description="Custom system prompt override")
 

@@ -5,7 +5,7 @@ cd /d "%~dp0"
 REM Check if Python is available
 where python >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
-    echo Python not found. Please install Python 3.10 or later.
+    echo Python not found. Please install Python 3.11 or later.
     pause
     exit /b 1
 )

@@ -1,12 +1,3 @@
-# =============================================================================
-# ORIGINAL WIDGET.PY - ADAPTED FOR MODULAR MONOLITH (NO HTTP/WEBSOCKETS)
-# =============================================================================
-# This is the original widget.py with all its features preserved.
-# The only changes are:
-# 1. Removed HTTP/WebSocket communication
-# 2. Integrated directly with the agent module via signals
-# =============================================================================
-
 import sys
 import os
 import sounddevice as sd
@@ -19,7 +10,7 @@ import traceback
 from PyQt6.QtWidgets import (QApplication, QWidget, QPushButton, QVBoxLayout, 
                               QHBoxLayout, QMenu, QTextEdit, QLineEdit, QScrollArea,
                               QLabel, QFrame, QSizePolicy, QLayout, QDialog, QMessageBox, QFileDialog, QTextBrowser, QSizePolicy)
-from PyQt6.QtGui import QAction, QTextCursor, QFont, QTextOption, QKeyEvent, QPainter, QColor, QPen, QPixmap, QSyntaxHighlighter, QTextCharFormat
+from PyQt6.QtGui import QAction, QTextCursor, QFont, QTextOption, QKeyEvent, QPainter, QColor, QPen, QPixmap, QSyntaxHighlighter, QTextCharFormat, QTextDocument
 from PyQt6.QtCore import Qt, QPoint, QEvent, pyqtSignal, QObject, QThread, pyqtSlot, QTimer, QRect, QSize
 
 import markdown
@@ -38,6 +29,7 @@ class ScreenshotSelector(QWidget):
     def __init__(self, screenshot):
         super().__init__()
         self.screenshot = screenshot
+        self.dpr = max(1.0, float(screenshot.devicePixelRatio()))
         self.start_pos = None
         self.end_pos = None
         self.selecting = False
@@ -56,7 +48,7 @@ class ScreenshotSelector(QWidget):
         """Draw the screenshot with selection overlay."""
         painter = QPainter(self)
         
-        # Draw the screenshot
+        # Draw the screenshot (Qt will scale by devicePixelRatio automatically)
         painter.drawPixmap(0, 0, self.screenshot)
         
         # Draw semi-transparent overlay
@@ -67,12 +59,21 @@ class ScreenshotSelector(QWidget):
         if self.start_pos and self.end_pos:
             selection_rect = QRect(self.start_pos, self.end_pos).normalized()
             
+            # Map to pixmap pixels for source rect (handles HiDPI correctly)
+            src_rect = QRect(
+                int(selection_rect.x() * self.dpr),
+                int(selection_rect.y() * self.dpr),
+                int(selection_rect.width() * self.dpr),
+                int(selection_rect.height() * self.dpr),
+            )
+            
             # Clear the selection area (show original screenshot)
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
             painter.fillRect(selection_rect, Qt.GlobalColor.transparent)
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
-            # Avoid implicit scaling by drawing the source rect at its top-left
-            painter.drawPixmap(selection_rect.topLeft(), self.screenshot, selection_rect)
+            
+            # Draw the un-dimmed selection preview with accurate source rect
+            painter.drawPixmap(selection_rect.topLeft(), self.screenshot, src_rect)
             
             # Draw selection border
             pen = QPen(QColor(0, 150, 255), 2, Qt.PenStyle.SolidLine)
@@ -112,7 +113,16 @@ class ScreenshotSelector(QWidget):
             
             # Must have some minimum size
             if selection_rect.width() > 10 and selection_rect.height() > 10:
-                selected_pixmap = self.screenshot.copy(selection_rect)
+                # Copy using source rect in pixmap pixel coords (HiDPI safe)
+                src_rect = QRect(
+                    int(selection_rect.x() * self.dpr),
+                    int(selection_rect.y() * self.dpr),
+                    int(selection_rect.width() * self.dpr),
+                    int(selection_rect.height() * self.dpr),
+                )
+                selected_pixmap = self.screenshot.copy(src_rect)
+                # Normalize DPR on the cropped pixmap so downstream uses logical pixels
+                selected_pixmap.setDevicePixelRatio(1.0)
                 self.screenshot_selected.emit(selected_pixmap)
                 self.close()
             else:
@@ -130,6 +140,8 @@ class ScreenshotSelector(QWidget):
 class MultilineInput(QTextEdit):
     """Custom QTextEdit that sends message on Enter and adds newline on Shift+Enter."""
     send_message = pyqtSignal()
+    paste_image = pyqtSignal(QPixmap)  # New signal for pasted images
+    paste_files = pyqtSignal(list)     # New signal for pasted files
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -169,7 +181,13 @@ class MultilineInput(QTextEdit):
             self.setFixedHeight(new_height)
         
     def keyPressEvent(self, event: QKeyEvent):
-        """Handle Enter and Shift+Enter differently."""
+        """Handle Enter and Shift+Enter differently, plus Ctrl+V for paste."""
+        # Handle Ctrl+V for paste
+        if event.key() == Qt.Key.Key_V and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            self.handle_paste()
+            event.accept()
+            return
+        
         if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
             if event.modifiers() == Qt.KeyboardModifier.ShiftModifier:
                 # Shift+Enter: insert newline
@@ -180,6 +198,40 @@ class MultilineInput(QTextEdit):
                 event.accept()
         else:
             super().keyPressEvent(event)
+    
+    def handle_paste(self):
+        """Handle paste event - check for images or files in clipboard."""
+        clipboard = QApplication.clipboard()
+        mime_data = clipboard.mimeData()
+        
+        # Check for image data first (highest priority)
+        if mime_data.hasImage():
+            image = clipboard.image()
+            if not image.isNull():
+                pixmap = QPixmap.fromImage(image)
+                self.paste_image.emit(pixmap)
+                return
+        
+        # Check for file URLs (from file explorer)
+        if mime_data.hasUrls():
+            urls = mime_data.urls()
+            file_paths = []
+            for url in urls:
+                if url.isLocalFile():
+                    path = url.toLocalFile()
+                    file_paths.append(path)
+            
+            if file_paths:
+                self.paste_files.emit(file_paths)
+                return
+        
+        # If no image or files, handle as normal text paste
+        if mime_data.hasText():
+            super().keyPressEvent(QKeyEvent(
+                QEvent.Type.KeyPress,
+                Qt.Key.Key_V,
+                Qt.KeyboardModifier.ControlModifier
+            ))
     
     def clear_text(self):
         """Clear the text content."""
@@ -545,6 +597,8 @@ class ChatWindow(QWidget):
         input_layout = QHBoxLayout()
         self.input_field = MultilineInput()
         self.input_field.send_message.connect(self.send_message)
+        self.input_field.paste_image.connect(self.handle_paste_image)
+        self.input_field.paste_files.connect(self.handle_paste_files)
         
         self.send_button = QPushButton("➤")
         self.send_button.setFixedSize(40, 40)
@@ -1374,23 +1428,51 @@ class ChatWindow(QWidget):
     
     def _perform_screenshot(self):
         try:
-            screen = QApplication.primaryScreen()
-            full_screenshot = screen.grabWindow(0)
-            self.selection_overlay = ScreenshotSelector(full_screenshot)
-            self.selection_overlay.screenshot_selected.connect(self._handle_screenshot_selection)
-            self.selection_overlay.screenshot_cancelled.connect(self._handle_screenshot_cancelled)
-            self.selection_overlay.showFullScreen()
+            from PyQt6.QtGui import QGuiApplication
+            screens = QGuiApplication.screens()
+            if not screens:
+                raise RuntimeError("No screens detected")
+            
+            # Show overlays on all screens so selection can happen anywhere
+            self.selection_overlays = []
+            
+            def on_selected(pixmap):
+                self._teardown_overlays()
+                self._handle_screenshot_selection(pixmap)
+            
+            def on_cancelled():
+                self._teardown_overlays()
+                self._handle_screenshot_cancelled()
+            
+            for screen in screens:
+                shot = screen.grabWindow(0)
+                overlay = ScreenshotSelector(shot)
+                overlay.screenshot_selected.connect(on_selected)
+                overlay.screenshot_cancelled.connect(on_cancelled)
+                overlay.setGeometry(screen.geometry())
+                overlay.show()
+                self.selection_overlays.append(overlay)
         except Exception as e:
             self.show()
             print(f"Screenshot error: {e}")
             traceback.print_exc()
             QMessageBox.warning(self, "Screenshot Error", f"Failed to capture screenshot: {str(e)}")
     
+    def _teardown_overlays(self):
+        overlays = getattr(self, "selection_overlays", [])
+        for ov in overlays:
+            try:
+                ov.close()
+            except Exception:
+                pass
+        self.selection_overlays = []
+    
     def _handle_screenshot_selection(self, selected_pixmap):
         try:
             import base64
             from PyQt6.QtCore import QBuffer, QIODevice
             
+            self._teardown_overlays()
             if self.parent_widget:
                 self.parent_widget.show()
             self.show()
@@ -1410,6 +1492,7 @@ class ChatWindow(QWidget):
             traceback.print_exc()
     
     def _handle_screenshot_cancelled(self):
+        self._teardown_overlays()
         if self.parent_widget:
             self.parent_widget.show()
         self.show()
@@ -1477,6 +1560,56 @@ class ChatWindow(QWidget):
         self.screenshots.clear()
         self.update_screenshots_display()
     
+    def handle_paste_image(self, pixmap):
+        """Handle pasted image from clipboard (Ctrl+V)."""
+        if len(self.screenshots) >= self.max_screenshots:
+            QMessageBox.warning(self, "Maximum Screenshots", 
+                f"You can attach a maximum of {self.max_screenshots} screenshots per message.")
+            return
+        
+        try:
+            import base64
+            from PyQt6.QtCore import QBuffer, QIODevice
+            
+            # Convert pixmap to base64
+            buffer = QBuffer()
+            buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+            pixmap.save(buffer, "PNG")
+            buffer.close()
+            screenshot_data = base64.b64encode(buffer.data()).decode('utf-8')
+            
+            # Add to screenshots list
+            self.screenshots.append({"data": screenshot_data, "pixmap": pixmap})
+            self.update_screenshots_display()
+            
+            # Show brief feedback in console
+            print(f"✓ Image pasted from clipboard ({pixmap.width()}x{pixmap.height()})")
+            
+        except Exception as e:
+            print(f"✗ Paste image error: {e}")
+            traceback.print_exc()
+            QMessageBox.warning(self, "Paste Error", f"Failed to paste image: {str(e)}")
+    
+    def handle_paste_files(self, file_paths):
+        """Handle pasted files/folders from clipboard (Ctrl+V)."""
+        try:
+            added_count = 0
+            for path in file_paths:
+                if path not in self.dropped_files:
+                    self.dropped_files.append(path)
+                    added_count += 1
+            
+            if added_count > 0:
+                self.update_attached_files_display()
+                print(f"✓ Pasted {added_count} file(s)/folder(s) from clipboard")
+            else:
+                print(f"ℹ All pasted files were already attached")
+            
+        except Exception as e:
+            print(f"✗ Paste files error: {e}")
+            traceback.print_exc()
+            QMessageBox.warning(self, "Paste Error", f"Failed to paste files: {str(e)}")
+    
     def closeEvent(self, event):
         from PyQt6.QtCore import QSettings
         settings = QSettings("ai-agent", "widget")
@@ -1501,6 +1634,17 @@ class ChatWindow(QWidget):
             except Exception:
                 pass
         super().showEvent(event)
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.WindowStateChange:
+            if self.windowState() & Qt.WindowState.WindowMinimized:
+                QTimer.singleShot(0, self._hide_on_minimize)
+        super().changeEvent(event)
+
+    def _hide_on_minimize(self):
+        # Mimic clicking X: hide without quitting the app
+        self.setWindowState(Qt.WindowState.WindowNoState)
+        self.hide()
 
 
 class SettingsWindow(QDialog):
@@ -1591,24 +1735,354 @@ class ChatHistoryJsonWindow(QDialog):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
 
+        # Top action bar with buttons
         actions = QHBoxLayout()
         actions.addStretch(1)
+        
+        # Search button
+        self.search_btn = QPushButton("🔍 Search")
+        self.search_btn.setToolTip("Search (Ctrl+F)")
+        self.search_btn.clicked.connect(self.toggle_search_panel)
+        self.search_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3a3a3a;
+                color: #d4d4d4;
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #4a4a4a;
+                border-color: #666;
+            }
+        """)
+        actions.addWidget(self.search_btn)
+        
         self.save_as_btn = QPushButton("Save As…")
-        self.close_btn = QPushButton("Close")
+        self.save_as_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3a3a3a;
+                color: #d4d4d4;
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #4a4a4a;
+                border-color: #666;
+            }
+        """)
         actions.addWidget(self.save_as_btn)
+        
+        self.close_btn = QPushButton("Close")
+        self.close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3a3a3a;
+                color: #d4d4d4;
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #4a4a4a;
+                border-color: #666;
+            }
+        """)
         actions.addWidget(self.close_btn)
         layout.addLayout(actions)
 
+        # Search panel (hidden by default)
+        self.search_panel = QWidget()
+        self.search_panel.hide()
+        search_layout = QHBoxLayout(self.search_panel)
+        search_layout.setContentsMargins(5, 5, 5, 5)
+        search_layout.setSpacing(5)
+        
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Find...")
+        self.search_input.textChanged.connect(self.perform_search)
+        self.search_input.returnPressed.connect(self.find_next)
+        self.search_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #2d2d2d;
+                color: #d4d4d4;
+                border: 1px solid #3d3d3d;
+                border-radius: 3px;
+                padding: 4px 8px;
+                font-size: 11px;
+            }
+            QLineEdit:focus {
+                border-color: #007acc;
+            }
+        """)
+        search_layout.addWidget(self.search_input)
+        
+        # Match counter
+        self.match_label = QLabel("No matches")
+        self.match_label.setStyleSheet("""
+            QLabel {
+                color: #888;
+                font-size: 11px;
+                padding: 0 5px;
+            }
+        """)
+        search_layout.addWidget(self.match_label)
+        
+        # Previous button
+        self.prev_btn = QPushButton("▲")
+        self.prev_btn.setToolTip("Previous match (Shift+Enter)")
+        self.prev_btn.setFixedSize(24, 24)
+        self.prev_btn.clicked.connect(self.find_previous)
+        self.prev_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3a3a3a;
+                color: #d4d4d4;
+                border: 1px solid #555;
+                border-radius: 3px;
+                font-size: 10px;
+            }
+            QPushButton:hover {
+                background-color: #4a4a4a;
+            }
+            QPushButton:disabled {
+                color: #555;
+                background-color: #2a2a2a;
+            }
+        """)
+        search_layout.addWidget(self.prev_btn)
+        
+        # Next button
+        self.next_btn = QPushButton("▼")
+        self.next_btn.setToolTip("Next match (Enter)")
+        self.next_btn.setFixedSize(24, 24)
+        self.next_btn.clicked.connect(self.find_next)
+        self.next_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3a3a3a;
+                color: #d4d4d4;
+                border: 1px solid #555;
+                border-radius: 3px;
+                font-size: 10px;
+            }
+            QPushButton:hover {
+                background-color: #4a4a4a;
+            }
+            QPushButton:disabled {
+                color: #555;
+                background-color: #2a2a2a;
+            }
+        """)
+        search_layout.addWidget(self.next_btn)
+        
+        # Close search button
+        self.close_search_btn = QPushButton("✕")
+        self.close_search_btn.setToolTip("Close (Esc)")
+        self.close_search_btn.setFixedSize(24, 24)
+        self.close_search_btn.clicked.connect(self.close_search_panel)
+        self.close_search_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3a3a3a;
+                color: #d4d4d4;
+                border: 1px solid #555;
+                border-radius: 3px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #4a4a4a;
+            }
+        """)
+        search_layout.addWidget(self.close_search_btn)
+        
+        self.search_panel.setStyleSheet("""
+            QWidget {
+                background-color: #252526;
+                border-bottom: 1px solid #3d3d3d;
+            }
+        """)
+        layout.addWidget(self.search_panel)
+
+        # Text editor
         self.text = QTextEdit()
         self.text.setReadOnly(True)
         self.text.setAcceptRichText(False)
         self.text.setFont(QFont("Consolas", 10))
         layout.addWidget(self.text)
 
+        # Search state
+        self.search_matches = []
+        self.current_match_index = -1
+        self.search_highlight_format = QTextCharFormat()
+        self.search_highlight_format.setBackground(QColor("#614d1e"))
+        self.current_highlight_format = QTextCharFormat()
+        self.current_highlight_format.setBackground(QColor("#007acc"))
+        
         self._highlighter = JsonSyntaxHighlighter(self.text.document())
         self.save_as_btn.clicked.connect(self.save_as)
         self.close_btn.clicked.connect(self.close)
+        
+        # Install event filter for Ctrl+F and Esc shortcuts
+        self.installEventFilter(self)
+        self.search_input.installEventFilter(self)
 
+    def eventFilter(self, obj, event):
+        """Handle keyboard shortcuts for search."""
+        if event.type() == QEvent.Type.KeyPress:
+            # Ctrl+F to open search
+            if event.key() == Qt.Key.Key_F and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+                self.toggle_search_panel()
+                return True
+            
+            # Esc to close search (when search input has focus)
+            if obj == self.search_input and event.key() == Qt.Key.Key_Escape:
+                self.close_search_panel()
+                return True
+            
+            # Shift+Enter for previous match
+            if obj == self.search_input and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                if event.modifiers() == Qt.KeyboardModifier.ShiftModifier:
+                    self.find_previous()
+                    return True
+        
+        return super().eventFilter(obj, event)
+    
+    def toggle_search_panel(self):
+        """Toggle search panel visibility."""
+        if self.search_panel.isVisible():
+            self.close_search_panel()
+        else:
+            self.search_panel.show()
+            self.search_input.setFocus()
+            # Select all text in search input for easy replacement
+            self.search_input.selectAll()
+    
+    def close_search_panel(self):
+        """Close search panel and clear highlights."""
+        self.search_panel.hide()
+        self.clear_search_highlights()
+        self.search_input.clear()
+        self.text.setFocus()
+    
+    def perform_search(self):
+        """Perform search and highlight all matches."""
+        search_text = self.search_input.text()
+        
+        # Clear previous highlights
+        self.clear_search_highlights()
+        
+        if not search_text:
+            self.match_label.setText("No matches")
+            self.search_matches = []
+            self.current_match_index = -1
+            self.prev_btn.setEnabled(False)
+            self.next_btn.setEnabled(False)
+            return
+        
+        # Get document and cursor
+        document = self.text.document()
+        cursor = QTextCursor(document)
+        
+        # Find all matches (case-insensitive)
+        self.search_matches = []
+        flags = QTextDocument.FindFlag(0)  # No flags = case-insensitive
+        
+        while True:
+            cursor = document.find(search_text, cursor, flags)
+            if cursor.isNull():
+                break
+            self.search_matches.append(cursor)
+        
+        # Update UI based on results
+        if self.search_matches:
+            # Highlight all matches
+            for i, match_cursor in enumerate(self.search_matches):
+                extra_selection = QTextEdit.ExtraSelection()
+                extra_selection.cursor = match_cursor
+                
+                # First match gets special highlight
+                if i == 0:
+                    extra_selection.format = self.current_highlight_format
+                else:
+                    extra_selection.format = self.search_highlight_format
+                
+                # Store for later
+                if i == 0:
+                    self.text.setExtraSelections([extra_selection])
+                else:
+                    current_selections = self.text.extraSelections()
+                    current_selections.append(extra_selection)
+                    self.text.setExtraSelections(current_selections)
+            
+            # Set current match to first
+            self.current_match_index = 0
+            self.match_label.setText(f"{self.current_match_index + 1} of {len(self.search_matches)}")
+            
+            # Scroll to first match
+            self.text.setTextCursor(self.search_matches[0])
+            self.text.ensureCursorVisible()
+            
+            # Enable navigation buttons
+            self.prev_btn.setEnabled(True)
+            self.next_btn.setEnabled(True)
+        else:
+            self.match_label.setText("No matches")
+            self.current_match_index = -1
+            self.prev_btn.setEnabled(False)
+            self.next_btn.setEnabled(False)
+    
+    def find_next(self):
+        """Navigate to next match."""
+        if not self.search_matches:
+            return
+        
+        # Move to next match (wrap around)
+        self.current_match_index = (self.current_match_index + 1) % len(self.search_matches)
+        self.highlight_current_match()
+    
+    def find_previous(self):
+        """Navigate to previous match."""
+        if not self.search_matches:
+            return
+        
+        # Move to previous match (wrap around)
+        self.current_match_index = (self.current_match_index - 1) % len(self.search_matches)
+        self.highlight_current_match()
+    
+    def highlight_current_match(self):
+        """Highlight the current match and scroll to it."""
+        if not self.search_matches or self.current_match_index < 0:
+            return
+        
+        # Update match label
+        self.match_label.setText(f"{self.current_match_index + 1} of {len(self.search_matches)}")
+        
+        # Re-highlight all matches with current one special
+        selections = []
+        for i, match_cursor in enumerate(self.search_matches):
+            extra_selection = QTextEdit.ExtraSelection()
+            extra_selection.cursor = match_cursor
+            
+            if i == self.current_match_index:
+                extra_selection.format = self.current_highlight_format
+            else:
+                extra_selection.format = self.search_highlight_format
+            
+            selections.append(extra_selection)
+        
+        self.text.setExtraSelections(selections)
+        
+        # Scroll to current match
+        self.text.setTextCursor(self.search_matches[self.current_match_index])
+        self.text.ensureCursorVisible()
+    
+    def clear_search_highlights(self):
+        """Clear all search highlights."""
+        self.text.setExtraSelections([])
+        self.search_matches = []
+        self.current_match_index = -1
+    
     def set_json_text(self, text: str):
         self.text.setPlainText(text)
 
@@ -2344,14 +2818,3 @@ class FloatingWidget(QWidget):
                 traceback.print_exc()
 
         threading.Thread(target=_transcribe, daemon=True).start()
-
-
-# Backwards compatibility
-Gadget = FloatingWidget
-
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    gadget = FloatingWidget()
-    gadget.show()
-    sys.exit(app.exec())
