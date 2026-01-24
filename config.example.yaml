@@ -2,12 +2,8 @@
 # Copy this file to 'config.yaml' and modify as needed
 
 # Agent identity
-agent_name: Atlas
+agent_name: Djasha
 user_id: default_user
-
-# API Configuration (prefer environment variables for sensitive data)
-# api_key: null  # Set OPENAI_API_KEY env var instead
-# base_url: null  # Only set if using a custom endpoint
 
 # UI Settings
 ui:
@@ -23,12 +19,12 @@ ui:
 
 # Agent Settings
 agent:
-  model_name: gpt-5
+  model_name: gpt-5.1
   temperature: 1.0
   max_turns: 32
   reasoning_effort: medium
   reasoning_summary: auto
-  text_verbosity: low
+  text_verbosity: medium
   stream_responses: true
   # custom_system_prompt: null  # Override system prompt if desired
 

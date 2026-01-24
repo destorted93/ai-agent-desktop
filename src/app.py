@@ -34,16 +34,11 @@ class Application(QObject):
     
     def initialize(self):
         """Initialize the application."""
-        # Get API key (optional - can be set later via UI)
-        api_key = (
-            self.settings.api_key 
-            or os.getenv("OPENAI_API_KEY") 
-            or get_secret("api_token")
-            or self.secure_storage.get_secret("api_token")
-        )
+        # Get API key from secure storage
+        api_key = self.secure_storage.get_secret("api_token") or None
         
-        # Get base URL from settings or secure storage
-        base_url = self.settings.base_url or self.secure_storage.get_config_value("base_url")
+        # Get base URL from secure storage
+        base_url = self.secure_storage.get_config_value("base_url") or None
         
         # Get project root
         project_root = self.settings.tools.project_root or os.getcwd()

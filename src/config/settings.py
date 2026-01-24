@@ -80,12 +80,8 @@ class Settings(BaseModel):
     """Main application settings."""
     
     # Identity
-    agent_name: str = Field(default="Atlas", description="Agent display name")
+    agent_name: str = Field(default="Djasha", description="Agent display name")
     user_id: str = Field(default="default_user", description="User identifier")
-    
-    # API Configuration
-    api_key: Optional[str] = Field(default=None, description="OpenAI API key (prefer env var)")
-    base_url: Optional[str] = Field(default=None, description="Custom API base URL")
     
     # Sub-settings
     ui: UISettings = Field(default_factory=UISettings)
@@ -128,12 +124,6 @@ def load_settings(config_path: Optional[Path] = None) -> Settings:
             _settings = Settings()
     else:
         _settings = Settings()
-    
-    # Override with environment variables
-    if os.getenv("OPENAI_API_KEY"):
-        _settings.api_key = os.getenv("OPENAI_API_KEY")
-    if os.getenv("OPENAI_BASE_URL"):
-        _settings.base_url = os.getenv("OPENAI_BASE_URL")
     
     return _settings
 

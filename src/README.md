@@ -10,12 +10,7 @@ A clean, modular monolith desktop AI assistant with voice input, chat interface,
    pip install -r requirements.txt  # Or manually
    ```
 
-2. **Set your API key:**
-   ```bash
-   set OPENAI_API_KEY=your-key-here
-   ```
-
-3. **Run the agent:**
+2. **Run the agent:**
    ```bash
    run.bat          # Windows
    python run.py    # Or directly
@@ -100,11 +95,6 @@ ui:
 tools:
   terminal_permission_required: false
 ```
-
-### Environment Variables
-
-- `OPENAI_API_KEY` - Your OpenAI API key (required)
-- `OPENAI_BASE_URL` - Custom API endpoint (optional)
 
 ## Key Improvements Over Previous Version
 
