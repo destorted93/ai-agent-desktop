@@ -1,0 +1,59 @@
+# AI Agent Desktop - Configuration
+
+# Agent identity
+agent_name: Djashaaaaaaaa
+user_id: default_user
+
+# API Settings (api_token is stored in OS keyring)
+api:
+  base_url: 'https://api.openai.com/v1'  # If empty, will use value from secure storage or default https://api.openai.com/v1
+
+# UI Settings
+ui:
+  theme: dark
+  widget_opacity: 0.95
+  widget_width: 60
+  widget_height: 60
+  chat_width: 600
+  chat_height: 700
+  always_on_top: true
+  font_size: 13
+  show_token_usage: true
+
+# Agent Settings
+agent:
+  model_name: gpt-5.1
+  temperature: 1.0
+  max_turns: 32
+  reasoning_effort: medium
+  reasoning_summary: auto
+  text_verbosity: medium
+  stream_responses: true
+  system_prompt_path: prompts/system_prompt.md  # Path to system prompt file
+
+# Transcription Settings
+transcribe:
+  model: gpt-4o-transcribe
+  language: en
+  sample_rate: 16000
+
+# Text-to-Speech Settings
+tts:
+  model: gpt-4o-mini-tts
+  voice: coral
+  format: mp3
+
+# Tool Settings
+tools:
+  enabled_tools:
+    - memory
+    - todos
+    - filesystem
+    - terminal
+    - documents
+    - visualization
+    - web
+    - image_generation
+  terminal_permission_required: false
+  filesystem_permission_required: false
+  # project_root: null  # Defaults to current working directory
