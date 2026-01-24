@@ -2,15 +2,14 @@
 
 import sys
 import os
-import json
 from typing import Optional, List, Generator, Dict, Any
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from .config import Settings, get_settings, AgentConfig
+from .config import get_settings, AgentConfig
 from .core import Agent
-from .storage import ChatHistoryManager, MemoryManager, SecureStorage, get_secret
+from .storage import ChatHistoryManager, SecureStorage
 from .tools import get_default_tools
 from .services import TranscribeService
 
@@ -86,6 +85,55 @@ class Application(QObject):
                 self.transcribe_service = TranscribeService(client=client)
             except Exception:
                 pass
+    
+    def get_current_settings(self) -> Dict[str, str]:
+        """Get current settings for display in UI.
+        
+        Returns:
+            Dict with base_url and api_token (if available)
+        """
+        base_url = self.secure_storage.get_config_value("base_url", "")
+        api_token = self.secure_storage.get_secret("api_token") or ""
+        
+        return {
+            "base_url": base_url,
+            "api_token": api_token
+        }
+    
+    def save_settings(self, settings: Dict[str, str]) -> bool:
+        """Save settings and update services.
+        
+        Args:
+            settings: Dict with 'base_url' and 'api_token' keys
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            base_url = settings.get("base_url", "").strip()
+            api_token = settings.get("api_token", "").strip()
+            
+            # Save to secure storage
+            self.secure_storage.set_config_value("base_url", base_url)
+            
+            if api_token:
+                self.secure_storage.set_secret("api_token", api_token)
+                # Update services with new credentials
+                self.update_api_key(api_token, base_url if base_url else None)
+            else:
+                # Clear token if empty - remove from storage and invalidate services
+                self.secure_storage.delete_secret("api_token")
+                # Clear agent client (empty string will set client to None)
+                if self.agent:
+                    self.agent.update_api_key("", base_url if base_url else None)
+                # Clear transcribe service
+                self.transcribe_service = None
+            
+            return True
+            
+        except Exception as e:
+            print(f"[APP] Failed to save settings: {e}")
+            return False
     
     def stop_agent(self):
         """Request agent to stop."""

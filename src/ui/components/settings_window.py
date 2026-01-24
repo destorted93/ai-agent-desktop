@@ -3,12 +3,16 @@ from PyQt6.QtCore import Qt, pyqtSignal
 
 
 class SettingsWindow(QDialog):
-    """Settings window for API configuration."""
-    settings_saved = pyqtSignal(dict)
+    """Settings window for API configuration.
     
-    def __init__(self, parent=None, secure_storage=None):
+    Pure UI component - does not access storage directly.
+    Emits signals for parent (Widget) to forward to App.
+    """
+    settings_save_requested = pyqtSignal(dict)  # Request to save settings
+    settings_load_requested = pyqtSignal()  # Request to load current settings
+    
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.secure_storage = secure_storage
         self.setWindowTitle("AI Agent Settings")
         self.setModal(False)
         self.resize(380, 260)
@@ -46,31 +50,31 @@ class SettingsWindow(QDialog):
         buttons.addWidget(self.close_btn)
         layout.addLayout(buttons)
 
-        self._load_settings()
         self.save_btn.clicked.connect(self._on_save)
         self.close_btn.clicked.connect(self.close)
         layout.addStretch(1)
     
-    def _load_settings(self):
-        if self.secure_storage:
-            existing_base_url = self.secure_storage.get_config_value("base_url", "")
-            if existing_base_url:
-                self.url_input.setText(existing_base_url)
-            existing_token = self.secure_storage.get_secret("api_token")
-            if existing_token:
-                self.token_input.setText(existing_token)
-
+    def load_settings(self, base_url: str = "", api_token: str = ""):
+        """Load settings into UI from parent.
+        
+        Args:
+            base_url: Base URL to display
+            api_token: API token to display
+        """
+        self.url_input.setText(base_url)
+        self.token_input.setText(api_token)
+    
     def _on_save(self):
+        """Emit save request with settings data."""
         url = self.url_input.text().strip()
         token = self.token_input.text().strip()
         settings = {"base_url": url, "api_token": token}
-        
-        if self.secure_storage:
-            self.secure_storage.set_config_value("base_url", url)
-            if token:
-                self.secure_storage.set_secret("api_token", token)
-            else:
-                self.secure_storage.delete_secret("api_token")
-        
-        self.settings_saved.emit(settings)
+        self.settings_save_requested.emit(settings)
+    
+    def show_save_success(self):
+        """Show success message after save completes."""
         QMessageBox.information(self, "Settings", "Settings saved successfully.")
+    
+    def show_save_error(self, error_message: str):
+        """Show error message if save fails."""
+        QMessageBox.warning(self, "Settings Error", f"Failed to save settings:\n{error_message}")

@@ -44,23 +44,30 @@ src/
 │   └── tts.py          # Text-to-speech
 └── ui/                 # PyQt6 interface
     ├── widget.py       # Floating widget
-    ├── chat_window.py  # Chat interface
     └── components/     # Reusable UI parts
+        ├── chat_window.py       # Chat interface
+        ├── settings_window.py   # Settings dialog
+        ├── multiline_input.py   # Text input widget
+        ├── screenshot_selector.py # Screenshot tool
+        └── chat_history_json_window.py # History viewer
 ```
 
 ## Features
 
 ### 🎤 Voice Input
-- Click to record
+- Long-press (1s) to record
 - Auto-transcribe using OpenAI Whisper
-- Multi-language support
+- Multi-language support (en, ro, ru, de, fr, es)
 
 ### 💬 Chat Interface
 - Type or speak your messages
 - Real-time streaming responses
+- File drag-and-drop attachment
 - Screenshot sharing (up to 5)
-- Syntax-highlighted code blocks
+- Syntax-highlighted code blocks with Pygments
 - Encrypted, persistent history
+- Token usage tracking
+- Stop generation at any time
 
 ### 🛠️ Agent Tools
 - **Memory**: Remember user preferences
@@ -75,22 +82,29 @@ src/
 ## Configuration
 
 Copy `config.example.yaml` to `config.yaml` and customize:
-
-```yaml
-# Agent identity
-agent_name: Atlas
+Djasha
+user_id: default_user
 
 # Agent behavior
 agent:
-  model_name: gpt-4o
+  model_name: gpt-5.1
   temperature: 1.0
-  max_turns: 16
+  max_turns: 32
+  reasoning_effort: medium
+  stream_responses: true
 
 # UI settings
 ui:
   theme: dark
   always_on_top: true
+  chat_width: 600
+  chat_height: 700
 
+# Tool settings
+tools:
+  enabled_tools: [memory, todos, filesystem, terminal, documents, visualization, web, image_generation]
+  terminal_permission_required: false
+  project_root: null  # defaults to CWD
 # Tool settings
 tools:
   terminal_permission_required: false
@@ -112,9 +126,9 @@ tools:
 - `config.yaml` - User configuration
 - `requirements.txt` - Python dependencies
 
-### Adding New Tools
-1. Create a new file in `src/tools/`
-2. Define a class with `schema` property and `run()` method
+##Components are in `src/ui/components/`
+- Main widget in `src/ui/widget.py`
+- Styles are inline using PyQt6 stylesheets
 3. Register in `src/tools/__init__.py`
 4. Add to `get_default_tools()` function
 

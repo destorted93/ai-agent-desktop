@@ -255,18 +255,42 @@ class FloatingWidget(QWidget):
             QMessageBox.information(self, "Restart Not Available", "Restart is only available when launched via a .bat file.")
 
     def open_settings(self):
+        """Open settings window and load current settings."""
         if self.settings_window is None:
-            secure_storage = self.app.secure_storage if self.app else None
-            self.settings_window = SettingsWindow(self, secure_storage=secure_storage)
-            self.settings_window.settings_saved.connect(self._on_settings_saved)
+            self.settings_window = SettingsWindow(self)
+            self.settings_window.settings_save_requested.connect(self._on_settings_save_requested)
+        
+        # Load current settings from app
+        if self.app:
+            current_settings = self.app.get_current_settings()
+            self.settings_window.load_settings(
+                base_url=current_settings.get("base_url", ""),
+                api_token=current_settings.get("api_token", "")
+            )
+        
         self.settings_window.show()
         self.settings_window.raise_()
         self.settings_window.activateWindow()
     
-    def _on_settings_saved(self, settings):
-        """Forward settings to app."""
-        if self.app and settings.get("api_token"):
-            self.app.update_api_key(settings["api_token"], settings.get("base_url"))
+    def _on_settings_save_requested(self, settings):
+        """Handle settings save request from settings window.
+        
+        Forwards to app for validation and persistence.
+        """
+        if not self.app:
+            self.settings_window.show_save_error("App not initialized")
+            return
+        
+        try:
+            # Ask app to save settings
+            success = self.app.save_settings(settings)
+            
+            if success:
+                self.settings_window.show_save_success()
+            else:
+                self.settings_window.show_save_error("Failed to save settings")
+        except Exception as e:
+            self.settings_window.show_save_error(str(e))
 
     def _set_language(self, code: str):
         allowed = {"en", "ro", "ru", "de", "fr", "es"}
