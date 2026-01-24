@@ -779,6 +779,8 @@ class ChatWindow(QWidget):
             if new_text and new_text.strip():
                 print(f"[ChatWindow] Requesting edit for entry_id: {entry_id}")
                 self.edit_message_requested.emit(entry_id, new_text.strip())
+                # Scroll to bottom after edit is initiated
+                self.scroll_to_bottom()
             else:
                 QMessageBox.warning(self, "Empty Message", "Message cannot be empty.")
     

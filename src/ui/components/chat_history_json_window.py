@@ -369,6 +369,19 @@ class ChatHistoryJsonWindow(QDialog):
     
     def set_json_text(self, text: str):
         self.text.setPlainText(text)
+        # Auto-scroll to bottom when new content is set
+        self.scroll_to_bottom()
+    
+    def scroll_to_bottom(self):
+        """Scroll to the bottom of the text editor."""
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(10, self._do_scroll)
+    
+    def _do_scroll(self):
+        """Actually perform the scroll."""
+        scrollbar = self.text.verticalScrollBar()
+        if scrollbar:
+            scrollbar.setValue(scrollbar.maximum())
 
     def closeEvent(self, event):
         from PyQt6.QtCore import QSettings
