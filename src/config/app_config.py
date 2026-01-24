@@ -18,6 +18,12 @@ def get_app_data_dir() -> Path:
     return path
 
 
+class APISettings(BaseModel):
+    """API connection settings."""
+    
+    base_url: Optional[str] = Field(default="", description="API base URL")
+
+
 class UISettings(BaseModel):
     """UI-related settings."""
     
@@ -30,19 +36,6 @@ class UISettings(BaseModel):
     always_on_top: bool = Field(default=True, description="Keep windows on top")
     font_size: int = Field(default=13, description="Base font size")
     show_token_usage: bool = Field(default=True, description="Show token usage in UI")
-
-
-class AgentSettings(BaseModel):
-    """Agent-related settings."""
-    
-    model_name: str = Field(default="gpt-5.1", description="OpenAI model name")
-    temperature: float = Field(default=1.0, ge=0.0, le=2.0, description="Model temperature")
-    max_turns: int = Field(default=32, ge=1, le=100, description="Max agent turns per request")
-    reasoning_effort: str = Field(default="medium", description="Reasoning effort (low/medium/high)")
-    reasoning_summary: str = Field(default="auto", description="Reasoning summary mode")
-    text_verbosity: str = Field(default="medium", description="Response verbosity")
-    stream_responses: bool = Field(default=True, description="Stream responses")
-    custom_system_prompt: Optional[str] = Field(default=None, description="Custom system prompt override")
 
 
 class TranscribeSettings(BaseModel):
@@ -76,16 +69,16 @@ class ToolSettings(BaseModel):
     project_root: Optional[str] = Field(default=None, description="Project root directory (defaults to CWD)")
 
 
-class Settings(BaseModel):
-    """Main application settings."""
+class AppConfig(BaseModel):
+    """Application configuration (non-agent settings)."""
     
     # Identity
     agent_name: str = Field(default="Djasha", description="Agent display name")
     user_id: str = Field(default="default_user", description="User identifier")
     
     # Sub-settings
+    api: APISettings = Field(default_factory=APISettings)
     ui: UISettings = Field(default_factory=UISettings)
-    agent: AgentSettings = Field(default_factory=AgentSettings)
     transcribe: TranscribeSettings = Field(default_factory=TranscribeSettings)
     tts: TTSSettings = Field(default_factory=TTSSettings)
     tools: ToolSettings = Field(default_factory=ToolSettings)
@@ -94,8 +87,8 @@ class Settings(BaseModel):
         extra = "ignore"
 
 
-# Global settings instance
-_settings: Optional[Settings] = None
+# Global config instance
+_config: Optional[AppConfig] = None
 
 
 def get_config_path() -> Path:
@@ -107,9 +100,9 @@ def get_config_path() -> Path:
     return get_app_data_dir() / "config.yaml"
 
 
-def load_settings(config_path: Optional[Path] = None) -> Settings:
-    """Load settings from YAML config file."""
-    global _settings
+def load_config(config_path: Optional[Path] = None) -> AppConfig:
+    """Load app config from YAML file."""
+    global _config
     
     if config_path is None:
         config_path = get_config_path()
@@ -118,52 +111,19 @@ def load_settings(config_path: Optional[Path] = None) -> Settings:
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
-            _settings = Settings(**data)
+            _config = AppConfig(**data)
         except Exception as e:
             print(f"Warning: Could not load config from {config_path}: {e}")
-            _settings = Settings()
+            _config = AppConfig()
     else:
-        _settings = Settings()
+        _config = AppConfig()
     
-    return _settings
+    return _config
 
 
-def save_settings(settings: Settings, config_path: Optional[Path] = None) -> None:
-    """Save settings to YAML config file."""
-    if config_path is None:
-        config_path = get_config_path()
-    
-    # Don't save API key to file (use env vars or keyring)
-    data = settings.model_dump(exclude={"api_key"})
-    
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(config_path, "w", encoding="utf-8") as f:
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-
-
-def get_settings() -> Settings:
-    """Get the global settings instance."""
-    global _settings
-    if _settings is None:
-        _settings = load_settings()
-    return _settings
-
-
-def update_settings(**kwargs) -> Settings:
-    """Update settings with new values."""
-    global _settings
-    settings = get_settings()
-    
-    # Handle nested updates
-    for key, value in kwargs.items():
-        if hasattr(settings, key):
-            if isinstance(value, dict) and hasattr(getattr(settings, key), "model_dump"):
-                # Nested model - merge
-                current = getattr(settings, key).model_dump()
-                current.update(value)
-                setattr(settings, key, type(getattr(settings, key))(**current))
-            else:
-                setattr(settings, key, value)
-    
-    save_settings(settings)
-    return settings
+def get_app_config() -> AppConfig:
+    """Get the global app config instance."""
+    global _config
+    if _config is None:
+        _config = load_config()
+    return _config

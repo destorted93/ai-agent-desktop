@@ -1,9 +1,12 @@
 # AI Agent Desktop - Configuration
-# Copy this file to 'config.yaml' and modify as needed
 
 # Agent identity
-agent_name: Djasha
+agent_name: Djashaaaaaaaa
 user_id: default_user
+
+# API Settings (api_token is stored in OS keyring)
+api:
+  base_url: 'https://api.openai.com/v1'  # If empty, will use value from secure storage or default https://api.openai.com/v1
 
 # UI Settings
 ui:
@@ -26,7 +29,7 @@ agent:
   reasoning_summary: auto
   text_verbosity: medium
   stream_responses: true
-  # custom_system_prompt: null  # Override system prompt if desired
+  system_prompt_path: prompts/system_prompt.md  # Path to system prompt file
 
 # Transcription Settings
 transcribe:

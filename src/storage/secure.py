@@ -161,3 +161,9 @@ class SecureStorage:
         """Set a config value."""
         self._config[key] = value
         self._save_config()
+    
+    def delete_config_value(self, key: str) -> None:
+        """Delete a config value."""
+        if key in self._config:
+            del self._config[key]
+            self._save_config()

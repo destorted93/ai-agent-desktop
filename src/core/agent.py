@@ -272,7 +272,7 @@ class Agent:
             request_kwargs["include"] = self.config.include
         
         # Stream response
-        print(f"[DEBUG Agent] Calling API with model={model}, stream={self.config.stream}")
+        print(f"[DEBUG Agent] Calling API with model={model}, stream={self.config.stream}, tools={len(self.tool_schemas)}, reasoning={self.config.reasoning}, verbosity={self.config.text}", )
         print(f"[DEBUG Agent] Input messages count: {len(input_messages + self.chat_history_during_run)}")
         events = self.client.responses.create(**request_kwargs)
         print(f"[DEBUG Agent] Got events iterator: {type(events)}")

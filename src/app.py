@@ -7,7 +7,7 @@ from typing import Optional, List, Generator, Dict, Any
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from .config import get_settings, AgentConfig
+from .config import get_app_config, AgentConfig
 from .core import Agent
 from .storage import ChatHistoryManager, SecureStorage
 from .tools import get_default_tools
@@ -22,7 +22,7 @@ class Application(QObject):
     
     def __init__(self):
         super().__init__()
-        self.settings = get_settings()
+        self.app_config = get_app_config()
         self.history_manager = ChatHistoryManager()
         self.secure_storage = SecureStorage()
         self.agent: Optional[Agent] = None
@@ -33,31 +33,33 @@ class Application(QObject):
     
     def initialize(self):
         """Initialize the application."""
-        # Get API key from secure storage
+        # Get API key from secure storage (keyring)
         api_key = self.secure_storage.get_secret("api_token") or None
         
-        # Get base URL from secure storage
-        base_url = self.secure_storage.get_config_value("base_url") or None
+        # Get base URL: config.yaml takes precedence, then secure_storage, then default
+        base_url = self.app_config.api.base_url
+        if not base_url:
+            base_url = self.secure_storage.get_config_value("base_url", "")
         
         # Get project root
-        project_root = self.settings.tools.project_root or os.getcwd()
+        project_root = self.app_config.tools.project_root or os.getcwd()
         
-        # Create agent config
-        agent_config = AgentConfig.from_settings(self.settings)
+        # Create agent config from YAML (with fallback to agent_config.py defaults)
+        agent_config = AgentConfig.from_yaml()
         
         # Get tools
         tools = get_default_tools(
             project_root=project_root,
-            permission_required=self.settings.tools.terminal_permission_required
+            permission_required=self.app_config.tools.terminal_permission_required
         )
         
         # Create agent
         self.agent = Agent(
             api_key=api_key,
             base_url=base_url,
-            name=self.settings.agent_name,
+            name=self.app_config.agent_name,
             tools=tools,
-            user_id=self.settings.user_id,
+            user_id=self.app_config.user_id,
             config=agent_config
         )
         
@@ -92,7 +94,8 @@ class Application(QObject):
         Returns:
             Dict with base_url and api_token (if available)
         """
-        base_url = self.secure_storage.get_config_value("base_url", "")
+        # Prefer config.yaml, fallback to secure_storage
+        base_url = self.app_config.api.base_url or self.secure_storage.get_config_value("base_url", "https://api.openai.com/v1")
         api_token = self.secure_storage.get_secret("api_token") or ""
         
         return {
@@ -113,9 +116,12 @@ class Application(QObject):
             base_url = settings.get("base_url", "").strip()
             api_token = settings.get("api_token", "").strip()
             
-            # Save to secure storage
+            # Save base_url to secure_storage (not config.yaml!)
             self.secure_storage.set_config_value("base_url", base_url)
+            # Reload config to pick up any changes
+            self.app_config = get_app_config()
             
+            # Save api_token to keyring (secure storage)
             if api_token:
                 self.secure_storage.set_secret("api_token", api_token)
                 # Update services with new credentials
