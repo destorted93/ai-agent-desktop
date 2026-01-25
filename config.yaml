@@ -25,9 +25,9 @@ agent:
   model_name: gpt-5.1
   temperature: 1.0
   max_turns: 32
-  reasoning_effort: medium
-  reasoning_summary: auto
-  text_verbosity: medium
+  reasoning_effort: high
+  reasoning_summary: detailed
+  text_verbosity: high
   stream_responses: true
   system_prompt_path: prompts/system_prompt.md  # Path to system prompt file
 
