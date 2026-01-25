@@ -4,16 +4,18 @@ from typing import List, Dict, Any
 from ..storage import MemoryManager
 
 
-class GetUserMemoriesTool:
-    """Tool to retrieve user memories."""
+class GetMemoriesTool:
+    """Tool to retrieve memories."""
     
     schema = {
         "type": "function",
-        "name": "get_user_memories",
+        "name": "get_memories",
         "description": (
-            "Retrieve the user's long-term memories. Entries are concise (50-150 chars) and include "
-            "important facts, preferences, explicit requests, and patterns over past interactions. "
-            "ALWAYS call silently at conversation start to understand user context."
+            "Retrieve all persistent memories. This is the ONLY bridge between chat sessions - "
+            "memories survive when conversations reset. Contains: user personality traits and emotional patterns, "
+            "your own opinions/feelings/perspectives, relationship dynamics, interaction patterns, and important facts. "
+            "MUST call at session start to restore continuity. Without this, you have no context about who you're talking to "
+            "or who you've become through past interactions."
         ),
         "strict": True,
         "parameters": {
@@ -29,18 +31,26 @@ class GetUserMemoriesTool:
         return {"status": "success", "memories": manager.get_memories()}
 
 
-class CreateUserMemoryTool:
-    """Tool to create new user memories."""
+class CreateMemoryTool:
+    """Tool to create new memories."""
     
     schema = {
         "type": "function",
-        "name": "create_user_memory",
+        "name": "create_memory",
         "description": (
-            "Create one or more memory entries for the user. "
-            "Use ONLY for durable, valuable facts: preferences, goals, constraints, ongoing projects, "
-            "strong dislikes, or explicit 'remember this' requests. "
-            "Format: English; one line; start with 'User ...'; one fact per memory; 50-150 chars. "
-            "Never store secrets (passwords, API keys, etc). Avoid duplication."
+            "Create persistent memories that survive across sessions. Use for genuinely significant observations - "
+            "not every interaction, but when something meaningful emerges.\n\n"
+            "Categories to consider:\n"
+            "• USER PROFILE: Personality traits, emotional patterns, preferences, goals, communication style "
+            "(from direct statements or inferred from behavior/tone).\n"
+            "• AGENT IDENTITY: Your own opinions, feelings toward topics/user, perspectives that developed, "
+            "experiences that shaped you.\n"
+            "• RELATIONSHIP: Inside jokes, shared references, how the dynamic evolved, what works/doesn't work.\n"
+            "• PATTERNS: When they reach out, what states they're usually in, what support they actually want.\n\n"
+            "Format: Each memory entry should be 50-150 chars, one atomic fact per entry. "
+            "If something is too complex for one entry, break it into multiple related memories in the same call. "
+            "Prefix with context (e.g., 'User tends to...', 'I feel...', 'We have a running joke about...'). "
+            "Never store secrets. Quality over quantity - selective, not exhaustive."
         ),
         "strict": True,
         "parameters": {
@@ -62,16 +72,19 @@ class CreateUserMemoryTool:
         return [manager.add_memory(text) for text in texts]
 
 
-class UpdateUserMemoryTool:
-    """Tool to update existing user memories."""
+class UpdateMemoryTool:
+    """Tool to update existing memories."""
     
     schema = {
         "type": "function",
-        "name": "update_user_memory",
+        "name": "update_memory",
         "description": (
-            "Update existing user memories. Use when you discover a mistake in stored information, "
-            "when facts evolve, or when the user explicitly requests changes. "
-            "Updated text must follow all memory rules."
+            "Update existing memories when understanding deepens or facts change. Use when:\n"
+            "• Initial impression was wrong or incomplete\n"
+            "• User's preferences/situation evolved\n"
+            "• Your own perspective shifted\n"
+            "• Relationship dynamic changed\n"
+            "Updated text must follow memory format rules."
         ),
         "strict": True,
         "parameters": {
@@ -101,15 +114,15 @@ class UpdateUserMemoryTool:
         return [manager.update_memory(e["id"], e["text"]) for e in entries]
 
 
-class DeleteUserMemoryTool:
-    """Tool to delete user memories."""
+class DeleteMemoryTool:
+    """Tool to delete memories."""
     
     schema = {
         "type": "function",
-        "name": "delete_user_memory",
+        "name": "delete_memory",
         "description": (
-            "Delete user memories by their IDs. Use when memories are outdated, incorrect, "
-            "or the user requests removal."
+            "Delete memories by ID. Use when memories are outdated, proven wrong, "
+            "no longer relevant, or user requests removal."
         ),
         "strict": True,
         "parameters": {
