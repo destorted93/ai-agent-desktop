@@ -509,20 +509,33 @@ class ChatWindow(QWidget):
         
         self.parent_widget = parent
     
-    def add_user_message(self, text, entry_id=None):
+    def add_user_message(self, text, entry_id=None, timestamp=None):
         """Add user message to chat (right-aligned, max 80% width) with hover actions.
         
         Args:
             text: The message text to display
             entry_id: Optional entry ID from storage (for delete/edit operations)
+            timestamp: Optional ISO timestamp string (defaults to now)
         """
         from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QPushButton, QWidget, QLabel
+        from datetime import datetime
+        
         msg_widget = QWidget()
         msg_widget.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         
-        # Store entry_id and text as properties on the widget for later access
+        # Parse or create timestamp
+        if timestamp:
+            try:
+                ts = datetime.fromisoformat(timestamp)
+            except:
+                ts = datetime.now()
+        else:
+            ts = datetime.now()
+        
+        # Store entry_id, text, and timestamp as properties on the widget for later access
         msg_widget.entry_id = entry_id
         msg_widget.message_text = text
+        msg_widget.timestamp = ts
         
         msg_layout = QHBoxLayout(msg_widget)
         msg_layout.setContentsMargins(0, 0, 0, 0)
@@ -534,7 +547,7 @@ class ChatWindow(QWidget):
         msg_box = QWidget()
         msg_box_layout = QVBoxLayout(msg_box)
         msg_box_layout.setContentsMargins(0, 0, 0, 0)
-        msg_box_layout.setSpacing(0)
+        msg_box_layout.setSpacing(2)
 
         msg_label = QLabel(text)
         msg_label.setWordWrap(True)
@@ -549,6 +562,20 @@ class ChatWindow(QWidget):
             }
         """)
         msg_box_layout.addWidget(msg_label)
+        
+        # Timestamp label (subtle, right-aligned)
+        time_label = QLabel(ts.strftime("%H:%M"))
+        time_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        time_label.setToolTip(ts.strftime("%Y-%m-%d %H:%M:%S"))
+        time_label.setStyleSheet("""
+            QLabel {
+                color: #888888;
+                font-size: 10px;
+                padding-right: 5px;
+                background: transparent;
+            }
+        """)
+        msg_box_layout.addWidget(time_label)
 
         # Actions row (invisible by default, shown on hover - uses opacity to avoid layout shift)
         actions_row = QWidget()

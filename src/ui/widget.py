@@ -366,8 +366,9 @@ class FloatingWidget(QWidget):
                         text = item.get("text", "")
                         if "User's input:" in text:
                             text = text.split("User's input:", 1)[1].strip()
-                        # Pass entry_id to the message widget
-                        self.chat_window.add_user_message(text, entry_id=entry_id)
+                        # Pass entry_id and timestamp to the message widget
+                        timestamp = wrapped_entry.get("ts")
+                        self.chat_window.add_user_message(text, entry_id=entry_id, timestamp=timestamp)
             
             elif role == "assistant":
                 for item in content:
