@@ -13,6 +13,7 @@ from PyQt6.QtCore import Qt, QEvent, pyqtSignal, pyqtSlot, QTimer
 from .components import SettingsWindow
 from .components import ChatHistoryJsonWindow
 from .components import ChatWindow
+from .components import MemoriesWindow
 
 
 class FloatingWidget(QWidget):
@@ -57,6 +58,7 @@ class FloatingWidget(QWidget):
         self.chat_window = ChatWindow(self)
         self.chat_window.hide()
         self.history_json_window = ChatHistoryJsonWindow(self)
+        self.memories_window = MemoriesWindow(self, app=app)
         self.settings_window = None
 
         # Agent inference tracking
@@ -233,6 +235,10 @@ class FloatingWidget(QWidget):
         open_history_action = QAction("Open Chat History", self)
         open_history_action.triggered.connect(self.open_chat_history)
         menu.addAction(open_history_action)
+        
+        open_memories_action = QAction("Open Memories", self)
+        open_memories_action.triggered.connect(self.open_memories)
+        menu.addAction(open_memories_action)
 
         menu.addSeparator()
         restart_action = QAction("Restart App", self)
@@ -411,6 +417,14 @@ class FloatingWidget(QWidget):
             self.history_json_window.raise_()
             self.history_json_window.activateWindow()
         self._fetch_history_json_async()
+    
+    def open_memories(self):
+        """Open the memories window and load current memories."""
+        if self.memories_window:
+            self.memories_window.show()
+            self.memories_window.raise_()
+            self.memories_window.activateWindow()
+            self.memories_window.refresh_content()
 
     def _fetch_history_json_async(self):
         """Request chat history JSON from app."""
