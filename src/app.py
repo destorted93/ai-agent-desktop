@@ -289,6 +289,23 @@ class Application(QObject):
         """Clear chat history."""
         return self.history_manager.clear_history(chat_id=chat_id)
     
+    def set_chat_history(self, history: List[Dict], chat_id: str = "default") -> Dict[str, Any]:
+        """Replace chat history with new data (e.g., from loaded file).
+        
+        Args:
+            history: List of wrapped history entries to save
+            chat_id: Chat session ID (for future multi-chat support)
+            
+        Returns:
+            Dict with 'status' key ('success' or 'error')
+        """
+        try:
+            self.history_manager.history = history
+            self.history_manager.save()
+            return {"status": "success"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
     # === Memory Methods ===
     
     def get_memories(self) -> List[Dict]:

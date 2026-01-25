@@ -57,7 +57,9 @@ class FloatingWidget(QWidget):
         # Chat window
         self.chat_window = ChatWindow(self)
         self.chat_window.hide()
-        self.history_json_window = ChatHistoryJsonWindow(self)
+        self.history_json_window = ChatHistoryJsonWindow(self, app=app)
+        # TODO: Enable when export/import formats are aligned
+        # self.history_json_window.data_loaded.connect(self.fetch_and_display_chat_history)
         self.memories_window = MemoriesWindow(self, app=app)
         self.settings_window = None
 

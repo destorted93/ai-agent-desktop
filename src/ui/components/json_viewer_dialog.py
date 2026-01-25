@@ -13,7 +13,7 @@ from PyQt6.QtGui import (
     QTextCursor, QFont, QColor, QSyntaxHighlighter, 
     QTextCharFormat, QTextDocument
 )
-from PyQt6.QtCore import Qt, QEvent
+from PyQt6.QtCore import Qt, QEvent, pyqtSignal
 
 
 class JsonSyntaxHighlighter(QSyntaxHighlighter):
@@ -59,6 +59,9 @@ class JsonSyntaxHighlighter(QSyntaxHighlighter):
 
 class JsonViewerDialog(QDialog):
     """Base class for JSON viewer dialogs with search, edit, and save functionality."""
+    
+    # Signal emitted after data is successfully loaded from file and saved to source
+    data_loaded = pyqtSignal()
     
     # Subclasses should set these
     window_title = "JSON Viewer"
@@ -115,6 +118,13 @@ class JsonViewerDialog(QDialog):
             self._style_button(self.save_btn, accent=True)
             self.save_btn.hide()
             actions.addWidget(self.save_btn)
+        
+        # Load from file button
+        self.load_btn = QPushButton("📂 Load")
+        self.load_btn.setToolTip("Load JSON from file")
+        self.load_btn.clicked.connect(self.load_from_file)
+        self._style_button(self.load_btn)
+        actions.addWidget(self.load_btn)
         
         self.save_as_btn = QPushButton("Save As…")
         self._style_button(self.save_as_btn)
@@ -506,6 +516,59 @@ class JsonViewerDialog(QDialog):
             scrollbar.setValue(scrollbar.maximum())
     
     # === File Operations ===
+    
+    def load_from_file(self):
+        """Load JSON content from a file and save to storage."""
+        filters = "JSON Files (*.json);;All Files (*.*)"
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Load JSON File", "", filters, "JSON Files (*.json)"
+        )
+        if not file_path:
+            return
+        
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception as e:
+            QMessageBox.warning(self, "Load Failed", f"Could not read file:\n{e}")
+            return
+        
+        # Validate JSON
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as e:
+            QMessageBox.warning(
+                self, "Invalid JSON",
+                f"The file does not contain valid JSON:\n\n{e}"
+            )
+            return
+        
+        # Confirm before replacing
+        reply = QMessageBox.question(
+            self,
+            "Confirm Load",
+            f"This will replace all current data with the content from:\n\n{os.path.basename(file_path)}\n\nContinue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        # Save to source
+        result = self.save_to_source(data)
+        
+        if result.get("status") == "success":
+            # Refresh display
+            self.refresh_content()
+            # Emit signal for any connected handlers (e.g., UI reload)
+            self.data_loaded.emit()
+            QMessageBox.information(self, "Loaded", "Data loaded successfully from file.")
+        else:
+            QMessageBox.warning(
+                self, "Load Failed",
+                f"Failed to save loaded data:\n{result.get('message', 'Unknown error')}"
+            )
     
     def save_as(self):
         """Save content to a file."""
