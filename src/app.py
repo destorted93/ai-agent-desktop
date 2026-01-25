@@ -1,5 +1,6 @@
 """Main application entry point for AI Agent Desktop."""
 
+import json
 import sys
 import os
 from typing import Optional, List, Generator, Dict, Any
@@ -9,7 +10,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from .config import get_app_config, AgentConfig
 from .core import Agent
-from .storage import ChatHistoryManager, SecureStorage
+from .storage import ChatHistoryManager, SecureStorage, MemoryManager
 from .tools import get_default_tools
 from .services import TranscribeService
 
@@ -24,6 +25,7 @@ class Application(QObject):
         super().__init__()
         self.app_config = get_app_config()
         self.history_manager = ChatHistoryManager()
+        self.memory_manager = MemoryManager()
         self.secure_storage = SecureStorage()
         self.agent: Optional[Agent] = None
         self.transcribe_service: Optional[TranscribeService] = None
@@ -227,7 +229,8 @@ class Application(QObject):
                             **content,
                             "saved_entry_ids": saved_entry_ids,
                             "user_entry_id": user_entry_id,
-                        }
+                        },
+                        "token_usage_history": self.agent.token_usage_history,
                     }
                     yield enriched_event
                     continue
@@ -287,6 +290,41 @@ class Application(QObject):
     def clear_chat_history(self, chat_id: str = "default") -> bool:
         """Clear chat history."""
         return self.history_manager.clear_history(chat_id=chat_id)
+    
+    def set_chat_history(self, history: List[Dict], chat_id: str = "default") -> Dict[str, Any]:
+        """Replace chat history with new data (e.g., from loaded file).
+        
+        Args:
+            history: List of wrapped history entries to save
+            chat_id: Chat session ID (for future multi-chat support)
+            
+        Returns:
+            Dict with 'status' key ('success' or 'error')
+        """
+        try:
+            self.history_manager.history = history
+            self.history_manager.save()
+            return {"status": "success"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    # === Memory Methods ===
+    
+    def get_memories(self) -> List[Dict]:
+        """Get all user memories."""
+        return self.memory_manager.get_memories()
+    
+    def set_memories(self, memories: List[Dict]) -> Dict[str, Any]:
+        """Replace all memories with new data.
+        
+        Args:
+            memories: List of memory dicts to save
+            
+        Returns:
+            Dict with 'status' key ('success' or 'error')
+        """
+        self.memory_manager.memories = memories
+        return self.memory_manager.save()
     
     def transcribe(self, audio_data: bytes, language: str = "en") -> Optional[Dict]:
         """Transcribe audio data."""

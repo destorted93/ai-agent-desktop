@@ -1,35 +1,35 @@
-"""Chat history JSON viewer window."""
+"""Memories JSON viewer window with edit capability."""
 
 from .json_viewer_dialog import JsonViewerDialog
 
 
-class ChatHistoryJsonWindow(JsonViewerDialog):
-    """Window to display raw chat history JSON."""
+class MemoriesWindow(JsonViewerDialog):
+    """Window to display and edit user memories JSON."""
     
-    window_title = "Chat History (JSON)"
-    settings_key = "history_json_window"
-    default_filename_prefix = "chat_history"
+    window_title = "User Memories"
+    settings_key = "memories_window"
+    default_filename_prefix = "memories"
     
     def __init__(self, parent=None, app=None):
-        """Initialize the chat history window.
+        """Initialize the memories window.
         
         Args:
             parent: Parent widget
             app: Application instance for data access
         """
         self._app = app
-        # Chat history is read-only (no in-place editing, but can load from file)
-        super().__init__(parent, editable=False)
+        # Memories are editable
+        super().__init__(parent, editable=True)
     
     def set_app(self, app):
         """Set the application reference."""
         self._app = app
     
     def save_to_source(self, data) -> dict:
-        """Save chat history data back to storage.
+        """Save memories data back to storage.
         
         Args:
-            data: List of wrapped history entries to save
+            data: List of memory dicts to save
             
         Returns:
             Dict with 'status' key ('success' or 'error')
@@ -38,21 +38,21 @@ class ChatHistoryJsonWindow(JsonViewerDialog):
             return {"status": "error", "message": "Application not available"}
         
         try:
-            result = self._app.set_chat_history(data)
+            result = self._app.set_memories(data)
             return result
         except Exception as e:
             return {"status": "error", "message": str(e)}
     
     def refresh_content(self):
-        """Refresh chat history from storage."""
+        """Refresh memories from storage."""
         if not self._app:
             self.set_json_text("[]")
             return
         
         try:
             import json
-            history = self._app.get_wrapped_chat_history()
-            json_text = json.dumps(history, indent=2, ensure_ascii=False)
+            memories = self._app.get_memories()
+            json_text = json.dumps(memories, indent=2, ensure_ascii=False)
             self.set_json_text(json_text)
         except Exception as e:
-            self.set_json_text(f"// Error loading chat history: {e}")
+            self.set_json_text(f"// Error loading memories: {e}")

@@ -1,7 +1,7 @@
 # AI Agent Desktop - Configuration
 
 # Agent identity
-agent_name: Djashaaaaaaaa
+agent_name: Aria
 user_id: default_user
 
 # API Settings (api_token is stored in OS keyring)

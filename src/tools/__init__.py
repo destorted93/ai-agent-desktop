@@ -2,10 +2,10 @@
 
 from .base import BaseTool
 from .memory import (
-    GetUserMemoriesTool,
-    CreateUserMemoryTool,
-    UpdateUserMemoryTool,
-    DeleteUserMemoryTool,
+    GetMemoriesTool,
+    CreateMemoryTool,
+    UpdateMemoryTool,
+    DeleteMemoryTool,
 )
 from .todos import (
     TodoManager,
@@ -43,10 +43,10 @@ __all__ = [
     # Base
     "BaseTool",
     # Memory
-    "GetUserMemoriesTool",
-    "CreateUserMemoryTool",
-    "UpdateUserMemoryTool",
-    "DeleteUserMemoryTool",
+    "GetMemoriesTool",
+    "CreateMemoryTool",
+    "UpdateMemoryTool",
+    "DeleteMemoryTool",
     # Todos
     "TodoManager",
     "GetTodosTool",
@@ -95,10 +95,10 @@ def get_default_tools(project_root: str, permission_required: bool = False):
     """
     return [
         # Memory
-        GetUserMemoriesTool(),
-        CreateUserMemoryTool(),
-        UpdateUserMemoryTool(),
-        DeleteUserMemoryTool(),
+        GetMemoriesTool(),
+        CreateMemoryTool(),
+        UpdateMemoryTool(),
+        DeleteMemoryTool(),
         # Chat History
         GetChatHistoryMetadataTool(),
         GetChatHistoryEntryTool(),

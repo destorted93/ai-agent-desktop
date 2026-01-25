@@ -164,6 +164,9 @@ class Agent:
         
         max_turns = max_turns or self.config.max_turns
         input_messages = input_messages or []
+
+        # clear token usage history
+        self.token_usage_history = {}
         
         # Validate input
         if message is None and screenshots_b64 is None:
@@ -449,4 +452,5 @@ class Agent:
                 "generated_images": self.generated_images,
                 "stopped": stopped,
             },
+            "token_usage_history": self.token_usage_history,
         }

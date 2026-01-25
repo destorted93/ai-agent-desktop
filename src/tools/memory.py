@@ -4,17 +4,13 @@ from typing import List, Dict, Any
 from ..storage import MemoryManager
 
 
-class GetUserMemoriesTool:
-    """Tool to retrieve user memories."""
+class GetMemoriesTool:
+    """Tool to retrieve memories."""
     
     schema = {
         "type": "function",
-        "name": "get_user_memories",
-        "description": (
-            "Retrieve the user's long-term memories. Entries are concise (50-150 chars) and include "
-            "important facts, preferences, explicit requests, and patterns over past interactions. "
-            "ALWAYS call silently at conversation start to understand user context."
-        ),
+        "name": "get_memories",
+        "description": "Retrieve all stored memories. Returns list of memory objects with id, text, and timestamp.",
         "strict": True,
         "parameters": {
             "type": "object",
@@ -29,19 +25,13 @@ class GetUserMemoriesTool:
         return {"status": "success", "memories": manager.get_memories()}
 
 
-class CreateUserMemoryTool:
-    """Tool to create new user memories."""
+class CreateMemoryTool:
+    """Tool to create new memories."""
     
     schema = {
         "type": "function",
-        "name": "create_user_memory",
-        "description": (
-            "Create one or more memory entries for the user. "
-            "Use ONLY for durable, valuable facts: preferences, goals, constraints, ongoing projects, "
-            "strong dislikes, or explicit 'remember this' requests. "
-            "Format: English; one line; start with 'User ...'; one fact per memory; 50-150 chars. "
-            "Never store secrets (passwords, API keys, etc). Avoid duplication."
-        ),
+        "name": "create_memory",
+        "description": "Store new memories. Each text becomes a separate memory entry with auto-generated id and timestamp.",
         "strict": True,
         "parameters": {
             "type": "object",
@@ -49,7 +39,7 @@ class CreateUserMemoryTool:
                 "texts": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "A list of memory texts to save.",
+                    "description": "List of memory texts to store (50-150 chars each, one fact per entry).",
                 }
             },
             "required": ["texts"],
@@ -62,17 +52,13 @@ class CreateUserMemoryTool:
         return [manager.add_memory(text) for text in texts]
 
 
-class UpdateUserMemoryTool:
-    """Tool to update existing user memories."""
+class UpdateMemoryTool:
+    """Tool to update existing memories."""
     
     schema = {
         "type": "function",
-        "name": "update_user_memory",
-        "description": (
-            "Update existing user memories. Use when you discover a mistake in stored information, "
-            "when facts evolve, or when the user explicitly requests changes. "
-            "Updated text must follow all memory rules."
-        ),
+        "name": "update_memory",
+        "description": "Modify existing memories by id. Replaces the text content while preserving the id.",
         "strict": True,
         "parameters": {
             "type": "object",
@@ -88,7 +74,7 @@ class UpdateUserMemoryTool:
                         "required": ["id", "text"],
                         "additionalProperties": False,
                     },
-                    "description": "List of memory updates with id and new text.",
+                    "description": "List of {id, text} objects.",
                 }
             },
             "required": ["entries"],
@@ -101,16 +87,13 @@ class UpdateUserMemoryTool:
         return [manager.update_memory(e["id"], e["text"]) for e in entries]
 
 
-class DeleteUserMemoryTool:
-    """Tool to delete user memories."""
+class DeleteMemoryTool:
+    """Tool to delete memories."""
     
     schema = {
         "type": "function",
-        "name": "delete_user_memory",
-        "description": (
-            "Delete user memories by their IDs. Use when memories are outdated, incorrect, "
-            "or the user requests removal."
-        ),
+        "name": "delete_memory",
+        "description": "Remove memories by id. Permanently deletes the specified entries.",
         "strict": True,
         "parameters": {
             "type": "object",
