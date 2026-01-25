@@ -657,8 +657,8 @@ class FloatingWidget(QWidget):
             elif event_type == "stream.finished":
                 self.chat_window.finish_ai_response()
                 self.chat_window.stop_sending_state()
-            elif event_type == "error":
-                error_msg = content.get("message", "Unknown error")
+            elif event_type == "response.error":
+                error_msg = content
                 self.chat_window.append_to_ai_response(f"\n[{agent_name}] [Error] {error_msg}\n\n", '31')
                 self.chat_window.finish_ai_response()
                 self.chat_window.stop_sending_state()
