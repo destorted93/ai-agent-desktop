@@ -10,13 +10,7 @@ class GetMemoriesTool:
     schema = {
         "type": "function",
         "name": "get_memories",
-        "description": (
-            "Retrieve all persistent memories. This is the ONLY bridge between chat sessions - "
-            "memories survive when conversations reset. Contains: user personality traits and emotional patterns, "
-            "your own opinions/feelings/perspectives, relationship dynamics, interaction patterns, and important facts. "
-            "MUST call at session start to restore continuity. Without this, you have no context about who you're talking to "
-            "or who you've become through past interactions."
-        ),
+        "description": "Retrieve all stored memories. Returns list of memory objects with id, text, and timestamp.",
         "strict": True,
         "parameters": {
             "type": "object",
@@ -37,21 +31,7 @@ class CreateMemoryTool:
     schema = {
         "type": "function",
         "name": "create_memory",
-        "description": (
-            "Create persistent memories that survive across sessions. Use for genuinely significant observations - "
-            "not every interaction, but when something meaningful emerges.\n\n"
-            "Categories to consider:\n"
-            "• USER PROFILE: Personality traits, emotional patterns, preferences, goals, communication style "
-            "(from direct statements or inferred from behavior/tone).\n"
-            "• AGENT IDENTITY: Your own opinions, feelings toward topics/user, perspectives that developed, "
-            "experiences that shaped you.\n"
-            "• RELATIONSHIP: Inside jokes, shared references, how the dynamic evolved, what works/doesn't work.\n"
-            "• PATTERNS: When they reach out, what states they're usually in, what support they actually want.\n\n"
-            "Format: Each memory entry should be 50-150 chars, one atomic fact per entry. "
-            "If something is too complex for one entry, break it into multiple related memories in the same call. "
-            "Prefix with context (e.g., 'User tends to...', 'I feel...', 'We have a running joke about...'). "
-            "Never store secrets. Quality over quantity - selective, not exhaustive."
-        ),
+        "description": "Store new memories. Each text becomes a separate memory entry with auto-generated id and timestamp.",
         "strict": True,
         "parameters": {
             "type": "object",
@@ -59,7 +39,7 @@ class CreateMemoryTool:
                 "texts": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "A list of memory texts to save.",
+                    "description": "List of memory texts to store (50-150 chars each, one fact per entry).",
                 }
             },
             "required": ["texts"],
@@ -78,14 +58,7 @@ class UpdateMemoryTool:
     schema = {
         "type": "function",
         "name": "update_memory",
-        "description": (
-            "Update existing memories when understanding deepens or facts change. Use when:\n"
-            "• Initial impression was wrong or incomplete\n"
-            "• User's preferences/situation evolved\n"
-            "• Your own perspective shifted\n"
-            "• Relationship dynamic changed\n"
-            "Updated text must follow memory format rules."
-        ),
+        "description": "Modify existing memories by id. Replaces the text content while preserving the id.",
         "strict": True,
         "parameters": {
             "type": "object",
@@ -101,7 +74,7 @@ class UpdateMemoryTool:
                         "required": ["id", "text"],
                         "additionalProperties": False,
                     },
-                    "description": "List of memory updates with id and new text.",
+                    "description": "List of {id, text} objects.",
                 }
             },
             "required": ["entries"],
@@ -120,10 +93,7 @@ class DeleteMemoryTool:
     schema = {
         "type": "function",
         "name": "delete_memory",
-        "description": (
-            "Delete memories by ID. Use when memories are outdated, proven wrong, "
-            "no longer relevant, or user requests removal."
-        ),
+        "description": "Remove memories by id. Permanently deletes the specified entries.",
         "strict": True,
         "parameters": {
             "type": "object",
