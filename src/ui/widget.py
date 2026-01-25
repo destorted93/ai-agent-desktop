@@ -636,6 +636,9 @@ class FloatingWidget(QWidget):
             elif event_type == "response.image_generation_call.completed":
                 self.chat_window.append_to_ai_response(f"[{agent_name}] [Image Generation] Completed\n\n", '34')
             elif event_type == "response.agent.done":
+                # print token usage if available, for debugging, beatutifully formatted
+                token_usage_history = event.get("token_usage_history", {})
+                print(f"[{agent_name}] Token Usage Summary:\n{json.dumps(token_usage_history, indent=2)}")
                 # App handles saving chat history and images - UI just updates display
                 if content.get("stopped"):
                     self.chat_window.append_to_ai_response(f"\n[{agent_name}] [Stopped by user]\n\n", '31')

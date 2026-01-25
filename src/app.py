@@ -1,5 +1,6 @@
 """Main application entry point for AI Agent Desktop."""
 
+import json
 import sys
 import os
 from typing import Optional, List, Generator, Dict, Any
@@ -228,7 +229,8 @@ class Application(QObject):
                             **content,
                             "saved_entry_ids": saved_entry_ids,
                             "user_entry_id": user_entry_id,
-                        }
+                        },
+                        "token_usage_history": self.agent.token_usage_history,
                     }
                     yield enriched_event
                     continue
