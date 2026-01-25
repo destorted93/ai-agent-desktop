@@ -18,10 +18,12 @@ from .components import ChatWindow
 class FloatingWidget(QWidget):
     """Main floating widget - the entry point for the AI assistant."""
     
-    history_loaded = pyqtSignal(list)
+    history_loaded = pyqtSignal(list)  # Now carries wrapped history with IDs
     history_json_loaded = pyqtSignal(str)
     agent_event_received = pyqtSignal(dict)
     transcription_received = pyqtSignal(str)
+    message_deleted = pyqtSignal(dict)  # Result of delete operation
+    edit_send_message = pyqtSignal(str)  # Send new message after edit (carries text)
     
 
     def __init__(self, app=None):
@@ -66,6 +68,12 @@ class FloatingWidget(QWidget):
         self.history_json_loaded.connect(self._display_history_json)
         self.agent_event_received.connect(self.handle_agent_event)
         self.transcription_received.connect(self.chat_window.send_message)
+        self.message_deleted.connect(self._on_message_deleted)
+        self.edit_send_message.connect(self._on_edit_send_message)
+        
+        # Connect ChatWindow signals for message operations
+        self.chat_window.delete_message_requested.connect(self.handle_delete_message)
+        self.chat_window.edit_message_requested.connect(self.handle_edit_message)
 
         # Transparent, always-on-top window
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
@@ -227,11 +235,6 @@ class FloatingWidget(QWidget):
         menu.addAction(open_history_action)
 
         menu.addSeparator()
-        clear_chat_action = QAction("Clear Chat History", self)
-        clear_chat_action.triggered.connect(self.clear_chat_all)
-        menu.addAction(clear_chat_action)
-
-        menu.addSeparator()
         restart_action = QAction("Restart App", self)
         restart_action.triggered.connect(self.restart_app)
         menu.addAction(restart_action)
@@ -332,24 +335,28 @@ class FloatingWidget(QWidget):
         self.chat_window.move(chat_x, chat_y)
     
     def fetch_and_display_chat_history(self):
-        """Request chat history from app."""
+        """Request wrapped chat history (with IDs) from app."""
         def _fetch():
             try:
                 if self.app:
-                    history = self.app.get_chat_history(chat_id="default")
-                    self.history_loaded.emit(history)
+                    # Get wrapped history which includes entry IDs
+                    wrapped_history = self.app.get_wrapped_chat_history(chat_id="default")
+                    self.history_loaded.emit(wrapped_history)
             except Exception as e:
                 print(f"Failed to fetch chat history: {e}")
         threading.Thread(target=_fetch, daemon=True).start()
     
     @pyqtSlot(list)
-    def display_chat_history(self, history):
+    def display_chat_history(self, wrapped_history):
+        """Display wrapped chat history with entry IDs."""
         if not self.chat_window:
             return
         print("Loading chat history...")
         self.chat_window.clear_chat()
         
-        for entry in history:
+        for wrapped_entry in wrapped_history:
+            entry_id = wrapped_entry.get("id")
+            entry = wrapped_entry.get("content", {})
             role = entry.get("role", "")
             content = entry.get("content", [])
             
@@ -359,7 +366,9 @@ class FloatingWidget(QWidget):
                         text = item.get("text", "")
                         if "User's input:" in text:
                             text = text.split("User's input:", 1)[1].strip()
-                        self.chat_window.add_user_message(text)
+                        # Pass entry_id and timestamp to the message widget
+                        timestamp = wrapped_entry.get("ts")
+                        self.chat_window.add_user_message(text, entry_id=entry_id, timestamp=timestamp)
             
             elif role == "assistant":
                 for item in content:
@@ -370,7 +379,8 @@ class FloatingWidget(QWidget):
                         self.chat_window.append_to_ai_response(text)
                         self.chat_window.finish_ai_response()
             
-            elif entry.get("type") == "reasoning":
+            # Check wrapped_entry type for non-message entries
+            elif wrapped_entry.get("type") == "reasoning":
                 summary = entry.get("summary", "")
                 if summary:
                     if isinstance(summary, list):
@@ -383,7 +393,7 @@ class FloatingWidget(QWidget):
                         self.chat_window.append_to_ai_response(summary_text)
                         self.chat_window.finish_ai_response()
             
-            elif entry.get("type") == "function_call":
+            elif wrapped_entry.get("type") == "function_call":
                 func_name = entry.get("name", "")
                 func_args = entry.get("arguments", "")
                 self.chat_window.start_ai_response()
@@ -421,27 +431,22 @@ class FloatingWidget(QWidget):
     
     def clear_chat_all(self):
         """Request app to clear chat history."""
-        reply = QMessageBox.question(self, 'Clear Chat History',
-            'Are you sure you want to clear all chat history?\n\nThis action cannot be undone.',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No)
-        if reply == QMessageBox.StandardButton.Yes:
-            if self.chat_window:
-                self.chat_window.clear_chat()
-            if self.history_json_window:
-                self.history_json_window.set_json_text("[]")
-            
-            def _clear_storage():
-                try:
-                    if self.app:
-                        success = self.app.clear_chat_history(chat_id="default")
-                        if success:
-                            print("Chat history cleared")
-                            if self.history_json_window and self.history_json_window.isVisible():
-                                self._fetch_history_json_async()
-                except Exception as e:
-                    print(f"Failed to clear chat history: {e}")
-            threading.Thread(target=_clear_storage, daemon=True).start()
+        if self.chat_window:
+            self.chat_window.clear_chat()
+        if self.history_json_window:
+            self.history_json_window.set_json_text("[]")
+        
+        def _clear_storage():
+            try:
+                if self.app:
+                    success = self.app.clear_chat_history(chat_id="default")
+                    if success:
+                        print("Chat history cleared")
+                        if self.history_json_window and self.history_json_window.isVisible():
+                            self._fetch_history_json_async()
+            except Exception as e:
+                print(f"Failed to clear chat history: {e}")
+        threading.Thread(target=_clear_storage, daemon=True).start()
     
     def stop_agent_inference(self):
         """Request app to stop agent."""
@@ -449,6 +454,73 @@ class FloatingWidget(QWidget):
         if self.app:
             self.app.stop_agent()
         print("Stop inference requested")
+    
+    def handle_delete_message(self, entry_id: str):
+        """Handle request to delete a message and all subsequent messages.
+        
+        Args:
+            entry_id: The ID of the message to delete from
+        """
+        def _delete():
+            try:
+                if self.app:
+                    result = self.app.delete_messages_from_id(entry_id)
+                    self.message_deleted.emit(result)
+            except Exception as e:
+                print(f"Failed to delete message: {e}")
+                self.message_deleted.emit({"status": "error", "message": str(e)})
+        threading.Thread(target=_delete, daemon=True).start()
+    
+    @pyqtSlot(dict)
+    def _on_message_deleted(self, result: dict):
+        """Handle message deletion result - refresh UI."""
+        if result.get("status") == "success":
+            print(f"[UI] Message deleted successfully. Refreshing chat...")
+            # Refresh the chat display
+            self.fetch_and_display_chat_history()
+            # Also refresh JSON window if visible
+            if self.history_json_window and self.history_json_window.isVisible():
+                self._fetch_history_json_async()
+        else:
+            error_msg = result.get("message", "Unknown error")
+            print(f"[UI] Message deletion failed: {error_msg}")
+            QMessageBox.warning(self, "Delete Failed", f"Failed to delete message: {error_msg}")
+    
+    def handle_edit_message(self, entry_id: str, new_text: str):
+        """Handle request to edit a message (delete from this point and send new message).
+        
+        Args:
+            entry_id: The ID of the message to edit
+            new_text: The new message text to send
+        """
+        def _edit_and_send():
+            try:
+                if self.app:
+                    # First delete messages from this ID onwards
+                    result = self.app.delete_messages_from_id(entry_id)
+                    if result.get("status") == "success":
+                        print(f"[UI] Messages deleted for edit. Sending new message...")
+                        # Emit signal to refresh UI first
+                        self.message_deleted.emit(result)
+                        # Small delay to let UI refresh, then emit signal to send new message
+                        import time
+                        time.sleep(0.2)
+                        # Use signal to send message on main thread (safe from background thread)
+                        self.edit_send_message.emit(new_text)
+                    else:
+                        print(f"[UI] Failed to delete messages for edit: {result.get('message')}")
+                        self.message_deleted.emit(result)
+            except Exception as e:
+                print(f"Failed to edit message: {e}")
+                self.message_deleted.emit({"status": "error", "message": str(e)})
+        
+        threading.Thread(target=_edit_and_send, daemon=True).start()
+    
+    @pyqtSlot(str)
+    def _on_edit_send_message(self, new_text: str):
+        """Handle sending new message after edit (called on main thread via signal)."""
+        if self.chat_window:
+            self.send_to_agent(new_text)
     
     def send_to_agent(self, text, files_list=None, screenshots_data=None):
         """Send message to app which runs the agent."""
@@ -553,6 +625,13 @@ class FloatingWidget(QWidget):
                     self.chat_window.append_to_ai_response(f"\n[{agent_name}] [Stopped by user]\n\n", '31')
                     self.chat_window.finish_ai_response()
                     self.chat_window.stop_sending_state()
+                
+                # Update the user message widget with the saved entry ID
+                user_entry_id = content.get("user_entry_id")
+                if user_entry_id:
+                    self.chat_window.update_last_user_message_id(user_entry_id)
+                    print(f"[UI] Updated user message with entry_id: {user_entry_id}")
+                
                 # Refresh history JSON window if visible
                 if self.history_json_window and self.history_json_window.isVisible():
                     self._fetch_history_json_async()
