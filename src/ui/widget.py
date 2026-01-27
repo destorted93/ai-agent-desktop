@@ -654,6 +654,10 @@ class FloatingWidget(QWidget):
                 # Refresh history JSON window if visible
                 if self.history_json_window and self.history_json_window.isVisible():
                     self._fetch_history_json_async()
+                
+                # Refresh memories window if visible (agent may have created/updated memories)
+                if self.memories_window and self.memories_window.isVisible():
+                    self.memories_window.refresh_content()
             elif event_type == "stream.finished":
                 self.chat_window.finish_ai_response()
                 self.chat_window.stop_sending_state()

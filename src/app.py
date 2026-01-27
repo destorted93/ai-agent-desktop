@@ -312,6 +312,8 @@ class Application(QObject):
     
     def get_memories(self) -> List[Dict]:
         """Get all user memories."""
+        # Reload from disk to get latest (tools create their own MemoryManager instances)
+        self.memory_manager.load()
         return self.memory_manager.get_memories()
     
     def set_memories(self, memories: List[Dict]) -> Dict[str, Any]:

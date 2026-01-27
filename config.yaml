@@ -22,10 +22,10 @@ ui:
 
 # Agent Settings
 agent:
-  model_name: gpt-5.1
+  model_name: gpt-5.2
   temperature: 1.0
-  max_turns: 32
-  reasoning_effort: high
+  max_turns: 64
+  reasoning_effort: xhigh
   reasoning_summary: detailed
   text_verbosity: high
   stream_responses: true
