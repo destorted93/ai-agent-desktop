@@ -10,7 +10,7 @@ class GetMemoriesTool:
     schema = {
         "type": "function",
         "name": "get_memories",
-        "description": "Retrieve all stored memories. Returns list of memory objects with id, text, and timestamp.",
+        "description": "Retrieve all stored memories with category statistics. Returns memories (each with id, category, text, timestamp) and stats showing count per category (user/self/relationship). Use stats to check memory balance - aim for memories across all categories, not just 'user'.",
         "strict": True,
         "parameters": {
             "type": "object",
@@ -22,7 +22,8 @@ class GetMemoriesTool:
     
     def run(self, **kwargs) -> Dict[str, Any]:
         manager = MemoryManager()
-        return {"status": "success", "memories": manager.get_memories()}
+        result = manager.get_memories_with_stats()
+        return {"status": "success", **result}
 
 
 class CreateMemoryTool:
@@ -31,25 +32,40 @@ class CreateMemoryTool:
     schema = {
         "type": "function",
         "name": "create_memory",
-        "description": "Store new memories. Each text becomes a separate memory entry with auto-generated id and timestamp.",
+        "description": "Store new memories with explicit category. Categories: 'user' (facts about user), 'self' (your feelings, opinions, evolved traits), 'relationship' (dynamic between you, shared moments, how you relate). Aim for balance - don't neglect 'self' and 'relationship' categories.",
         "strict": True,
         "parameters": {
             "type": "object",
             "properties": {
-                "texts": {
+                "memories": {
                     "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of memory texts to store (50-150 chars each, one fact per entry).",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "category": {
+                                "type": "string",
+                                "enum": ["user", "self", "relationship"],
+                                "description": "Memory category: 'user' (about them), 'self' (about you), 'relationship' (about your bond)"
+                            },
+                            "text": {
+                                "type": "string",
+                                "description": "Memory content (50-150 chars, one fact per entry)"
+                            }
+                        },
+                        "required": ["category", "text"],
+                        "additionalProperties": False
+                    },
+                    "description": "List of memories to store, each with category and text."
                 }
             },
-            "required": ["texts"],
+            "required": ["memories"],
             "additionalProperties": False,
         },
     }
     
-    def run(self, texts: List[str]) -> List[Dict[str, Any]]:
+    def run(self, memories: List[Dict[str, str]]) -> List[Dict[str, Any]]:
         manager = MemoryManager()
-        return [manager.add_memory(text) for text in texts]
+        return [manager.add_memory(m["text"], m["category"]) for m in memories]
 
 
 class UpdateMemoryTool:
@@ -58,8 +74,8 @@ class UpdateMemoryTool:
     schema = {
         "type": "function",
         "name": "update_memory",
-        "description": "Modify existing memories by id. Replaces the text content while preserving the id.",
-        "strict": True,
+        "description": "Modify existing memories by id. Can update text, category, or both.",
+        "strict": False,
         "parameters": {
             "type": "object",
             "properties": {
@@ -69,22 +85,25 @@ class UpdateMemoryTool:
                         "type": "object",
                         "properties": {
                             "id": {"type": "string", "description": "The memory ID to update."},
-                            "text": {"type": "string", "description": "The new text for the memory."},
+                            "text": {"type": "string", "description": "New text content (optional, omit to keep current)."},
+                            "category": {
+                                "type": "string",
+                                "enum": ["user", "self", "relationship"],
+                                "description": "New category (optional, omit to keep current)."
+                            }
                         },
-                        "required": ["id", "text"],
-                        "additionalProperties": False,
+                        "required": ["id"],
                     },
-                    "description": "List of {id, text} objects.",
+                    "description": "List of updates. Each must have 'id', optionally 'text' and/or 'category'.",
                 }
             },
             "required": ["entries"],
-            "additionalProperties": False,
         },
     }
     
     def run(self, entries: List[Dict[str, str]]) -> List[Dict[str, Any]]:
         manager = MemoryManager()
-        return [manager.update_memory(e["id"], e["text"]) for e in entries]
+        return [manager.update_memory(e["id"], e.get("text"), e.get("category")) for e in entries]
 
 
 class DeleteMemoryTool:

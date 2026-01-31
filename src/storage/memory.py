@@ -2,9 +2,14 @@
 
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 
 from .secure import get_app_data_dir, write_encrypted_json, read_encrypted_json
+
+
+# Valid memory categories
+MemoryCategory = Literal["user", "self", "relationship"]
+VALID_CATEGORIES = {"user", "self", "relationship"}
 
 
 class MemoryManager:
@@ -37,13 +42,40 @@ class MemoryManager:
         """Get all memories."""
         return self.memories
     
-    def add_memory(self, text: str) -> Dict[str, Any]:
-        """Add a new memory."""
+    def get_memories_with_stats(self) -> Dict[str, Any]:
+        """Get all memories with category statistics.
+        
+        Returns:
+            Dict with 'memories' list and 'stats' showing count per category
+        """
+        stats = {"user": 0, "self": 0, "relationship": 0}
+        for memory in self.memories:
+            category = memory.get("category", "user")
+            if category in stats:
+                stats[category] += 1
+        return {
+            "memories": self.memories,
+            "stats": stats,
+            "total": len(self.memories)
+        }
+    
+    def add_memory(self, text: str, category: str = "user") -> Dict[str, Any]:
+        """Add a new memory.
+        
+        Args:
+            text: Memory content
+            category: One of 'user', 'self', or 'relationship'
+        """
         try:
+            # Validate category
+            if category not in VALID_CATEGORIES:
+                return {"status": "error", "message": f"Invalid category '{category}'. Must be one of: {', '.join(VALID_CATEGORIES)}"}
+            
             new_id = str(len(self.memories) + 1)
             now = datetime.now()
             memory = {
                 "id": new_id,
+                "category": category,
                 "date": now.strftime("%Y-%m-%d"),
                 "time": now.strftime("%H:%M"),
                 "text": text,
@@ -56,11 +88,24 @@ class MemoryManager:
         except Exception as e:
             return {"status": "error", "message": str(e)}
     
-    def update_memory(self, memory_id: str, new_text: str) -> Dict[str, Any]:
-        """Update an existing memory."""
+    def update_memory(self, memory_id: str, new_text: Optional[str] = None, new_category: Optional[str] = None) -> Dict[str, Any]:
+        """Update an existing memory.
+        
+        Args:
+            memory_id: ID of memory to update
+            new_text: New text content (optional)
+            new_category: New category (optional)
+        """
+        # Validate category if provided
+        if new_category is not None and new_category not in VALID_CATEGORIES:
+            return {"status": "error", "id": memory_id, "message": f"Invalid category '{new_category}'. Must be one of: {', '.join(VALID_CATEGORIES)}"}
+        
         for memory in self.memories:
             if memory["id"] == memory_id:
-                memory["text"] = new_text
+                if new_text is not None:
+                    memory["text"] = new_text
+                if new_category is not None:
+                    memory["category"] = new_category
                 result = self.save()
                 if result["status"] == "success":
                     return {"status": "success", "id": memory_id, "memory": memory}

@@ -100,15 +100,15 @@ def get_default_tools(project_root: str, permission_required: bool = False):
         UpdateMemoryTool(),
         DeleteMemoryTool(),
         # Chat History
-        GetChatHistoryMetadataTool(),
-        GetChatHistoryEntryTool(),
-        DeleteChatHistoryEntriesTool(),
-        GetChatHistoryStatsTool(),
+        # GetChatHistoryMetadataTool(),
+        # GetChatHistoryEntryTool(),
+        # DeleteChatHistoryEntriesTool(),
+        # GetChatHistoryStatsTool(),
         # Todos
-        GetTodosTool(),
-        CreateTodoTool(),
-        UpdateTodoTool(),
-        DeleteTodoTool(),
+        # GetTodosTool(),
+        # CreateTodoTool(),
+        # UpdateTodoTool(),
+        # DeleteTodoTool(),
         # Filesystem
         ReadFolderTool(root_path=project_root),
         ReadFileTool(root_path=project_root),
