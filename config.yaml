@@ -43,6 +43,11 @@ tts:
   voice: coral
   format: mp3
 
+# Embedding Settings (for RAG/Vector Database)
+embedding:
+  model: text-embedding-3-small
+  dimension: 1536
+
 # Tool Settings
 tools:
   enabled_tools:
