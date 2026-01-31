@@ -11,6 +11,7 @@ from .secure import (
 )
 from .chat_history import ChatHistoryManager
 from .memory import MemoryManager
+from .vectordb import VectorDBManager
 
 __all__ = [
     "get_app_data_dir",
@@ -22,4 +23,5 @@ __all__ = [
     "SecureStorage",
     "ChatHistoryManager",
     "MemoryManager",
+    "VectorDBManager",
 ]
