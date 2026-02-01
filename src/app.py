@@ -10,7 +10,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from .config import get_app_config, AgentConfig
 from .core import Agent
-from .storage import ChatHistoryManager, SecureStorage, MemoryManager
+from .storage import ChatHistoryManager, SecureStorage, MemoryManager, VectorDBManager
 from .tools import get_default_tools
 from .services import TranscribeService
 
@@ -27,6 +27,7 @@ class Application(QObject):
         self.history_manager = ChatHistoryManager()
         self.memory_manager = MemoryManager()
         self.secure_storage = SecureStorage()
+        self.vectordb_manager: Optional[VectorDBManager] = None
         self.agent: Optional[Agent] = None
         self.transcribe_service: Optional[TranscribeService] = None
         self.widget = None  # Will be set after UI import
@@ -75,11 +76,26 @@ class Application(QObject):
                 self.transcribe_service = None
         else:
             self.transcribe_service = None
+        
+        # Initialize VectorDB manager (for document collections/RAG)
+        try:
+            self.vectordb_manager = VectorDBManager(
+                api_key=api_key,
+                base_url=base_url,
+                embedding_model=self.app_config.embedding.model if hasattr(self.app_config, 'embedding') else "text-embedding-3-small"
+            )
+        except Exception as e:
+            print(f"[APP] Failed to initialize VectorDB manager: {e}")
+            self.vectordb_manager = None
     
     def update_api_key(self, api_key: str, base_url: Optional[str] = None):
         """Update API key and reinitialize agent."""
         if self.agent:
             self.agent.update_api_key(api_key, base_url)
+        
+        # Update VectorDB manager credentials
+        if self.vectordb_manager:
+            self.vectordb_manager.update_credentials(api_key, base_url)
         
         # Reinitialize transcribe service
         if api_key:
@@ -333,6 +349,179 @@ class Application(QObject):
         if self.transcribe_service:
             return self.transcribe_service.transcribe(audio_data=audio_data, language=language)
         return None
+    
+    # === VectorDB / Documents Methods ===
+    
+    def get_collections(self) -> List[Dict[str, Any]]:
+        """Get all document collections.
+        
+        Returns:
+            List of collection info dicts
+        """
+        if not self.vectordb_manager:
+            return []
+        try:
+            return self.vectordb_manager.get_collections()
+        except Exception as e:
+            print(f"[APP] Error getting collections: {e}")
+            return []
+    
+    def get_collection_metadata(self, name: str) -> Optional[Dict[str, Any]]:
+        """Get metadata for a specific collection.
+        
+        Args:
+            name: Collection name
+            
+        Returns:
+            Collection metadata dict or None
+        """
+        if not self.vectordb_manager:
+            return None
+        try:
+            return self.vectordb_manager.get_collection_metadata(name)
+        except Exception as e:
+            print(f"[APP] Error getting collection metadata: {e}")
+            return None
+    
+    def create_collection(
+        self,
+        name: str,
+        description: str = "",
+        source_type: str = "document",
+        tags: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """Create a new collection.
+        
+        Args:
+            name: Collection name
+            description: Human-readable description
+            source_type: Type of source
+            tags: Optional tags
+            
+        Returns:
+            Result dict with status
+        """
+        if not self.vectordb_manager:
+            return {"status": "error", "message": "VectorDB not initialized"}
+        try:
+            return self.vectordb_manager.create_collection(name, description, source_type, tags)
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    def delete_collection(self, name: str) -> Dict[str, Any]:
+        """Delete a collection.
+        
+        Args:
+            name: Collection name
+            
+        Returns:
+            Result dict with status
+        """
+        if not self.vectordb_manager:
+            return {"status": "error", "message": "VectorDB not initialized"}
+        try:
+            return self.vectordb_manager.delete_collection(name)
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    def update_collection_metadata(
+        self,
+        name: str,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """Update collection metadata.
+        
+        Args:
+            name: Collection name
+            description: New description (optional)
+            tags: New tags (optional)
+            
+        Returns:
+            Result dict with status
+        """
+        if not self.vectordb_manager:
+            return {"status": "error", "message": "VectorDB not initialized"}
+        try:
+            return self.vectordb_manager.update_collection_metadata(name, description, tags)
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    def get_collection_documents(
+        self,
+        collection_name: str,
+        limit: Optional[int] = None,
+        offset: int = 0
+    ) -> Dict[str, Any]:
+        """Get documents from a collection.
+        
+        Args:
+            collection_name: Name of the collection
+            limit: Maximum documents to return
+            offset: Number to skip
+            
+        Returns:
+            Dict with status and documents list
+        """
+        if not self.vectordb_manager:
+            return {"status": "error", "message": "VectorDB not initialized"}
+        try:
+            return self.vectordb_manager.get_collection_documents(
+                collection_name, limit=limit, offset=offset, include_embeddings=False
+            )
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    def chunk_document(
+        self,
+        file_path: str,
+        chunk_size: int = 1000,
+        chunk_overlap: int = 200
+    ) -> Dict[str, Any]:
+        """Chunk a document into smaller pieces.
+        
+        Args:
+            file_path: Path to the document
+            chunk_size: Max chunk size
+            chunk_overlap: Overlap between chunks
+            
+        Returns:
+            Dict with status and chunks list
+        """
+        if not self.vectordb_manager:
+            return {"status": "error", "message": "VectorDB not initialized"}
+        try:
+            chunks = self.vectordb_manager.chunk_document(file_path, chunk_size, chunk_overlap)
+            return {"status": "success", "chunks": chunks, "count": len(chunks)}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    def add_documents_to_collection(
+        self,
+        collection_name: str,
+        documents: List[str],
+        metadatas: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """Add documents to a collection with embeddings.
+        
+        This creates embeddings via OpenAI API which may take time.
+        
+        Args:
+            collection_name: Name of the collection
+            documents: List of text documents
+            metadatas: Optional metadata for each document
+            
+        Returns:
+            Dict with status and count
+        """
+        if not self.vectordb_manager:
+            return {"status": "error", "message": "VectorDB not initialized"}
+        if not self.vectordb_manager.openai_client:
+            return {"status": "error", "message": "OpenAI client not configured. Please set API key in Settings."}
+        try:
+            return self.vectordb_manager.add_documents(collection_name, documents, metadatas)
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
     
     def run(self):
         """Run the application."""

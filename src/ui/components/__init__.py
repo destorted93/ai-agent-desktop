@@ -7,6 +7,7 @@ from .chat_history_json_window import ChatHistoryJsonWindow
 from .chat_window import ChatWindow
 from .memories_window import MemoriesWindow
 from .json_viewer_dialog import JsonViewerDialog
+from .documents_window import DocumentsWindow
 
 __all__ = [
     "MultilineInput",
@@ -16,4 +17,5 @@ __all__ = [
     "ChatWindow",
     "MemoriesWindow",
     "JsonViewerDialog",
+    "DocumentsWindow",
 ]

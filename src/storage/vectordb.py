@@ -36,20 +36,33 @@ class VectorDBManager:
     
     def __init__(
         self,
-        embedding_model: str = "text-embedding-3-small",
-        openai_client: Optional[Any] = None
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        embedding_model: str = "text-embedding-3-small"
     ):
         """Initialize the vector database manager.
         
         Args:
+            api_key: OpenAI API key for embeddings
+            base_url: Custom API base URL
             embedding_model: OpenAI embedding model name
-            openai_client: OpenAI client instance for creating embeddings
         """
         if not chromadb:
             raise RuntimeError("chromadb package not available. Install with: pip install chromadb")
         
+        self.api_key = api_key
+        self.base_url = base_url
         self.embedding_model = embedding_model
-        self.openai_client = openai_client
+        
+        # Initialize OpenAI client for embeddings
+        self.openai_client: Optional[Any] = None
+        if api_key:
+            self._init_client()
+        
+        # Initialize OpenAI client for embeddings
+        self.openai_client: Optional[Any] = None
+        if api_key:
+            self._init_client()
         
         # Initialize ChromaDB
         self.db_path = get_app_data_dir() / "ai-agent-desktop-chromadb"
@@ -62,6 +75,35 @@ class VectorDBManager:
                 allow_reset=True
             )
         )
+    
+    def _init_client(self) -> None:
+        """Initialize the OpenAI client for embeddings."""
+        if not self.api_key:
+            self.openai_client = None
+            return
+        
+        try:
+            from openai import OpenAI
+            kwargs = {"api_key": self.api_key}
+            if self.base_url:
+                kwargs["base_url"] = self.base_url
+            self.openai_client = OpenAI(**kwargs)
+        except Exception as e:
+            print(f"Failed to initialize OpenAI client for embeddings: {e}")
+            self.openai_client = None
+    
+    def update_credentials(self, api_key: Optional[str] = None, base_url: Optional[str] = None) -> None:
+        """Update API credentials and reinitialize client.
+        
+        Args:
+            api_key: New OpenAI API key
+            base_url: New API base URL
+        """
+        if api_key is not None:
+            self.api_key = api_key
+        if base_url is not None:
+            self.base_url = base_url
+        self._init_client()
     
     def _create_embedding(self, text: str) -> List[float]:
         """Create embedding for text using OpenAI API.
@@ -123,6 +165,21 @@ class VectorDBManager:
             # Get collection stats
             count = collection.count()
             
+            # Parse JSON strings back to lists
+            source_files = metadata.get("source_files", "[]")
+            if isinstance(source_files, str):
+                try:
+                    source_files = json.loads(source_files)
+                except (json.JSONDecodeError, TypeError):
+                    source_files = []
+            
+            tags = metadata.get("tags", "[]")
+            if isinstance(tags, str):
+                try:
+                    tags = json.loads(tags)
+                except (json.JSONDecodeError, TypeError):
+                    tags = []
+            
             result.append({
                 "name": collection_name,
                 "count": count,
@@ -130,8 +187,8 @@ class VectorDBManager:
                 "updated_at": metadata.get("updated_at"),
                 "description": metadata.get("description", ""),
                 "source_type": metadata.get("source_type", "unknown"),
-                "source_files": metadata.get("source_files", []),
-                "tags": metadata.get("tags", []),
+                "source_files": source_files,
+                "tags": tags,
             })
         
         return result
@@ -149,6 +206,21 @@ class VectorDBManager:
             collection = self.client.get_collection(name=collection_name)
             metadata = collection.metadata or {}
             
+            # Parse JSON strings back to lists
+            source_files = metadata.get("source_files", "[]")
+            if isinstance(source_files, str):
+                try:
+                    source_files = json.loads(source_files)
+                except (json.JSONDecodeError, TypeError):
+                    source_files = []
+            
+            tags = metadata.get("tags", "[]")
+            if isinstance(tags, str):
+                try:
+                    tags = json.loads(tags)
+                except (json.JSONDecodeError, TypeError):
+                    tags = []
+            
             return {
                 "name": collection_name,
                 "count": collection.count(),
@@ -156,8 +228,8 @@ class VectorDBManager:
                 "updated_at": metadata.get("updated_at"),
                 "description": metadata.get("description", ""),
                 "source_type": metadata.get("source_type", "unknown"),
-                "source_files": metadata.get("source_files", []),
-                "tags": metadata.get("tags", []),
+                "source_files": source_files,
+                "tags": tags,
                 "chromadb_metadata": metadata,
             }
         except Exception:
@@ -193,6 +265,7 @@ class VectorDBManager:
                 pass  # Collection doesn't exist, proceed
             
             # Create collection with full metadata
+            # Note: ChromaDB only accepts scalar values in metadata, so store lists as JSON strings
             now = datetime.now().isoformat()
             collection = self.client.create_collection(
                 name=name,
@@ -201,8 +274,8 @@ class VectorDBManager:
                     "created_at": now,
                     "updated_at": now,
                     "source_type": source_type,
-                    "source_files": [],
-                    "tags": tags or [],
+                    "source_files": json.dumps([]),
+                    "tags": json.dumps(tags or []),
                 }
             )
             
@@ -248,9 +321,11 @@ class VectorDBManager:
             if description is not None:
                 updated_metadata["description"] = description
             if tags is not None:
-                updated_metadata["tags"] = tags
+                # Store list as JSON string
+                updated_metadata["tags"] = json.dumps(tags)
             if source_files is not None:
-                updated_metadata["source_files"] = source_files
+                # Store list as JSON string
+                updated_metadata["source_files"] = json.dumps(source_files)
             
             updated_metadata["updated_at"] = datetime.now().isoformat()
             
@@ -613,7 +688,7 @@ class VectorDBManager:
                         "file_path": str(path),
                         "chunk_index": i,
                         "file_type": "txt",
-                        **chunk.metadata
+                        # **chunk.metadata
                     }
                 })
             
@@ -665,7 +740,7 @@ class VectorDBManager:
                         "file_path": str(path),
                         "chunk_index": i,
                         "file_type": "docx",
-                        **chunk.metadata
+                        # **chunk.metadata
                     }
                 })
             
@@ -718,7 +793,7 @@ class VectorDBManager:
                         "chunk_index": i,
                         "file_type": "pdf",
                         "page": chunk.metadata.get("page", 0),
-                        **chunk.metadata
+                        # **chunk.metadata
                     }
                 })
             

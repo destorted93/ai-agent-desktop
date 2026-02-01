@@ -14,6 +14,7 @@ from .components import SettingsWindow
 from .components import ChatHistoryJsonWindow
 from .components import ChatWindow
 from .components import MemoriesWindow
+from .components import DocumentsWindow
 
 
 class FloatingWidget(QWidget):
@@ -61,6 +62,7 @@ class FloatingWidget(QWidget):
         # TODO: Enable when export/import formats are aligned
         # self.history_json_window.data_loaded.connect(self.fetch_and_display_chat_history)
         self.memories_window = MemoriesWindow(self, app=app)
+        self.documents_window = DocumentsWindow(self, app=app)
         self.settings_window = None
 
         # Agent inference tracking
@@ -241,6 +243,10 @@ class FloatingWidget(QWidget):
         open_memories_action = QAction("Open Memories", self)
         open_memories_action.triggered.connect(self.open_memories)
         menu.addAction(open_memories_action)
+        
+        open_documents_action = QAction("Open Documents", self)
+        open_documents_action.triggered.connect(self.open_documents)
+        menu.addAction(open_documents_action)
 
         menu.addSeparator()
         restart_action = QAction("Restart App", self)
@@ -427,6 +433,15 @@ class FloatingWidget(QWidget):
             self.memories_window.raise_()
             self.memories_window.activateWindow()
             self.memories_window.refresh_content()
+    
+    def open_documents(self):
+        """Open the documents/collections window."""
+        if self.documents_window:
+            self.documents_window.show()
+            self.documents_window.raise_()
+            self.documents_window.activateWindow()
+            # Refresh collections list when opened
+            self.documents_window.refresh_collections()
 
     def _fetch_history_json_async(self):
         """Request chat history JSON from app."""
