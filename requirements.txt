@@ -5,7 +5,8 @@
 openai>=1.40.0
 
 # UI
-PyQt6>=6.6.0
+PyQt6==6.10.2
+PyQt6-Qt6==6.10.1
 
 # Audio
 sounddevice>=0.4.6
@@ -13,9 +14,10 @@ numpy>=1.24.0
 
 # Vector storage & RAG
 chromadb
-langchain>=0.1.0
-langchain-community>=0.0.20
-pypdf>=3.17.0
+langchain
+langchain-community
+langchain-text-splitters
+pypdf
 
 # Encryption & Security
 cryptography>=41.0.0

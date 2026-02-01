@@ -14,12 +14,18 @@ except ImportError:
 
 try:
     from langchain_community.document_loaders import TextLoader, Docx2txtLoader, PyPDFLoader
-    from langchain.text_splitter import RecursiveCharacterTextSplitter
 except ImportError:
     TextLoader = None  # type: ignore
     Docx2txtLoader = None  # type: ignore
     PyPDFLoader = None  # type: ignore
-    RecursiveCharacterTextSplitter = None  # type: ignore
+
+try:
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+except ImportError:
+    try:
+        from langchain.text_splitters import RecursiveCharacterTextSplitter
+    except ImportError:
+        RecursiveCharacterTextSplitter = None  # type: ignore
 
 from .secure import get_app_data_dir
 

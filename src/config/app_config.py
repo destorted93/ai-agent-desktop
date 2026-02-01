@@ -54,6 +54,12 @@ class TTSSettings(BaseModel):
     format: str = Field(default="mp3", description="Audio format")
 
 
+class EmbeddingSettings(BaseModel):
+    """Embedding settings for RAG/Vector Database."""
+    
+    model: str = Field(default="text-embedding-3-small", description="Embedding model")
+
+
 class ToolSettings(BaseModel):
     """Tool-related settings."""
     
@@ -81,6 +87,7 @@ class AppConfig(BaseModel):
     ui: UISettings = Field(default_factory=UISettings)
     transcribe: TranscribeSettings = Field(default_factory=TranscribeSettings)
     tts: TTSSettings = Field(default_factory=TTSSettings)
+    embedding: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
     tools: ToolSettings = Field(default_factory=ToolSettings)
     
     class Config:

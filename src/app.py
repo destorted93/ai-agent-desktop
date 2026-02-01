@@ -82,7 +82,7 @@ class Application(QObject):
             self.vectordb_manager = VectorDBManager(
                 api_key=api_key,
                 base_url=base_url,
-                embedding_model=self.app_config.embedding.model if hasattr(self.app_config, 'embedding') else "text-embedding-3-small"
+                embedding_model=self.app_config.embedding.model
             )
         except Exception as e:
             print(f"[APP] Failed to initialize VectorDB manager: {e}")
