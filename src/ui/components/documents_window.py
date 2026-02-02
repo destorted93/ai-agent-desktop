@@ -535,6 +535,12 @@ class DocumentsWindow(QDialog):
         self.view_chunks_btn.setEnabled(False)
         self._style_button(self.view_chunks_btn)
         btn_layout.addWidget(self.view_chunks_btn)
+
+        self.edit_btn = QPushButton("✏️ Edit")
+        self.edit_btn.clicked.connect(self._on_edit_collection)
+        self.edit_btn.setEnabled(False)
+        self._style_button(self.edit_btn)
+        btn_layout.addWidget(self.edit_btn)
         
         self.delete_btn = QPushButton("🗑️ Delete")
         self.delete_btn.clicked.connect(self._on_delete_collection)
@@ -661,6 +667,7 @@ class DocumentsWindow(QDialog):
     def _on_selection_changed(self):
         has_selection = len(self.table.selectedItems()) > 0
         self.view_chunks_btn.setEnabled(has_selection)
+        self.edit_btn.setEnabled(has_selection)
         self.delete_btn.setEnabled(has_selection)
     
     def _get_selected_collection_name(self) -> Optional[str]:
@@ -683,6 +690,8 @@ class DocumentsWindow(QDialog):
         
         self._set_status(f"Loading chunks for '{collection_name}'...")
         self.view_chunks_btn.setEnabled(False)
+        self.edit_btn.setEnabled(False)
+        self.delete_btn.setEnabled(False)
         
         # Run in worker thread
         self._worker = WorkerThread(
@@ -692,9 +701,24 @@ class DocumentsWindow(QDialog):
         self._worker.finished.connect(lambda r: self._on_chunks_loaded(collection_name, r))
         self._worker.error.connect(self._on_chunks_load_error)
         self._worker.start()
+
+    def _on_edit_collection(self):
+        collection_name = self._get_selected_collection_name()
+        if not collection_name or not self._app:
+            return
+        
+        # For simplicity, we will just show a message box here.
+        # In a full implementation, you would create an EditCollectionDialog similar to NewCollectionDialog.
+        QMessageBox.information(
+            self,
+            "Edit Collection",
+            f"Editing collection '{collection_name}' is not implemented yet."
+        )
     
     def _on_chunks_loaded(self, collection_name: str, result: Dict[str, Any]):
         self.view_chunks_btn.setEnabled(True)
+        self.edit_btn.setEnabled(True)
+        self.delete_btn.setEnabled(True)
         
         if result.get("status") != "success":
             self._set_status(f"Error: {result.get('message', 'Unknown error')}")
@@ -713,6 +737,8 @@ class DocumentsWindow(QDialog):
     
     def _on_chunks_load_error(self, error_msg: str):
         self.view_chunks_btn.setEnabled(True)
+        self.edit_btn.setEnabled(True)
+        self.delete_btn.setEnabled(True)
         self._set_status(f"Error loading chunks: {error_msg}")
     
     def _on_delete_collection(self):
