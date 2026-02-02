@@ -779,6 +779,8 @@ class VectorDBManager:
             # Load document
             loader = PyPDFLoader(str(path))
             documents = loader.load()
+
+            full_text = " ".join([doc.page_content for doc in documents])
             
             # Split into chunks
             splitter = RecursiveCharacterTextSplitter(
@@ -786,19 +788,19 @@ class VectorDBManager:
                 chunk_overlap=chunk_overlap,
                 separators=["\n\n", "\n", ". ", " ", ""]
             )
-            chunks = splitter.split_documents(documents)
+            chunks = splitter.split_text(full_text)
             
             # Convert to our format
             result = []
             for i, chunk in enumerate(chunks):
                 result.append({
-                    "text": chunk.page_content,
+                    "text": chunk,
                     "metadata": {
                         "source": path.name,
                         "file_path": str(path),
                         "chunk_index": i,
                         "file_type": "pdf",
-                        "page": chunk.metadata.get("page", 0),
+                        # "page": chunk.metadata.get("page", 0),
                         # **chunk.metadata
                     }
                 })
