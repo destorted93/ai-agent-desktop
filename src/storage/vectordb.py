@@ -830,7 +830,7 @@ class VectorDBManager:
         
         if extension == ".txt":
             return self.chunk_text_file(path, chunk_size, chunk_overlap)
-        elif extension == ".docx":
+        elif extension == ".docx" or extension == ".doc":
             return self.chunk_word_file(path, chunk_size, chunk_overlap)
         elif extension == ".pdf":
             return self.chunk_pdf_file(path, chunk_size, chunk_overlap)
