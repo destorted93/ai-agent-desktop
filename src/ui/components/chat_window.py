@@ -1273,22 +1273,19 @@ class ChatWindow(QWidget):
 
     def show_text_context_menu(self, pos, text_browser):
         """Show context menu with copy options."""
+        if text_browser is None:
+            return
         menu = QMenu(self)
-        
         copy_action = QAction("Copy", self)
         copy_action.triggered.connect(lambda: text_browser.copy())
         menu.addAction(copy_action)
-        
         select_all_action = QAction("Select All", self)
         select_all_action.triggered.connect(lambda: text_browser.selectAll())
         menu.addAction(select_all_action)
-        
         menu.addSeparator()
-        
         copy_raw = QAction("Copy as Markdown", self)
         copy_raw.triggered.connect(lambda: self.copy_raw_markdown(text_browser))
         menu.addAction(copy_raw)
-        
         menu.exec(text_browser.mapToGlobal(pos))
 
     def copy_raw_markdown(self, text_browser):
