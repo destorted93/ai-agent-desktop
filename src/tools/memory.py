@@ -49,7 +49,7 @@ class CreateMemoryTool:
                             },
                             "text": {
                                 "type": "string",
-                                "description": "Memory content (50-150 chars, one fact per entry)"
+                                "description": "Memory content."
                             }
                         },
                         "required": ["category", "text"],
