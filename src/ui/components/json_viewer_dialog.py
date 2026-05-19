@@ -14,6 +14,7 @@ from PyQt6.QtGui import (
     QTextCharFormat, QTextDocument
 )
 from PyQt6.QtCore import Qt, QEvent, pyqtSignal
+from ..screen_utils import validate_window_position
 
 
 class JsonSyntaxHighlighter(QSyntaxHighlighter):
@@ -62,6 +63,8 @@ class JsonViewerDialog(QDialog):
     
     # Signal emitted after data is successfully loaded from file and saved to source
     data_loaded = pyqtSignal()
+    # Signal emitted after data is successfully cleared
+    data_cleared = pyqtSignal()
     
     # Subclasses should set these
     window_title = "JSON Viewer"
@@ -129,6 +132,13 @@ class JsonViewerDialog(QDialog):
         self.save_as_btn = QPushButton("Save As…")
         self._style_button(self.save_as_btn)
         actions.addWidget(self.save_as_btn)
+        
+        # Clear All button
+        self.clear_all_btn = QPushButton("🗑️ Clear All")
+        self.clear_all_btn.setToolTip("Clear all data")
+        self.clear_all_btn.clicked.connect(self._on_clear_all_clicked)
+        self._style_button(self.clear_all_btn)
+        actions.addWidget(self.clear_all_btn)
         
         self.close_btn = QPushButton("Close")
         self._style_button(self.close_btn)
@@ -377,6 +387,30 @@ class JsonViewerDialog(QDialog):
                 f"Failed to save:\n{result.get('message', 'Unknown error')}"
             )
     
+    def _on_clear_all_clicked(self):
+        """Handle clear all button click."""
+        reply = QMessageBox.question(
+            self,
+            "Clear All Data",
+            "Are you sure you want to clear all data? This action cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                result = self.clear_all_data()
+                
+                if result.get("status") == "success":
+                    QMessageBox.information(self, "Success", "All data cleared successfully.")
+                    self.refresh_content()
+                    self.data_cleared.emit()
+                else:
+                    error_msg = result.get("message", "Unknown error")
+                    QMessageBox.critical(self, "Clear Failed", f"Failed to clear data:\n{error_msg}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"An error occurred:\n{e}")
+    
     @abstractmethod
     def save_to_source(self, data) -> dict:
         """Save data back to the source. Subclasses must implement this.
@@ -384,6 +418,17 @@ class JsonViewerDialog(QDialog):
         Args:
             data: Parsed JSON data to save
             
+        Returns:
+            Dict with 'status' key ('success' or 'error') and optional 'message'
+        """
+        pass
+    
+    @abstractmethod
+    def clear_all_data(self) -> dict:
+        """Clear all data from the source (storage).
+        
+        Subclasses must implement this to clear their specific data.
+        
         Returns:
             Dict with 'status' key ('success' or 'error') and optional 'message'
         """
@@ -607,11 +652,9 @@ class JsonViewerDialog(QDialog):
     def showEvent(self, event):
         from PyQt6.QtCore import QSettings
         settings = QSettings("ai-agent", "widget")
-        pos = settings.value(f"{self.settings_key}_pos", None)
-        if pos is not None:
-            try:
-                x, y = map(int, str(pos).strip('()').split(','))
-                self.move(x, y)
-            except Exception:
-                pass
+        saved_pos = settings.value(f"{self.settings_key}_pos", None)
+        validated_pos = validate_window_position(saved_pos, 900, 700)
+        if validated_pos is not None:
+            x, y = validated_pos
+            self.move(x, y)
         super().showEvent(event)

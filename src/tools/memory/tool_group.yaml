@@ -1,0 +1,9 @@
+id: memory
+display_name: Memory
+prompt_md: prompt.md
+tools:
+  - get_memories
+  - search_memories
+  - create_memory
+  - update_memory
+  - delete_memory

@@ -10,5 +10,18 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-REM Run the application
+REM Mark that we were launched via .bat (used by in-app restart logic if needed)
+set WIDGET_LAUNCH_MODE=run
+
+REM Restart loop: exit code 75 means "restart me"
+:run
 python run.py
+set EXITCODE=%ERRORLEVEL%
+if "%EXITCODE%"=="75" (
+    echo.
+    echo [run.bat] Restart requested... relaunching.
+    echo.
+    goto run
+)
+
+exit /b %EXITCODE%

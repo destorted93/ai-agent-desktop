@@ -1,134 +1,212 @@
 """Agent tools module."""
 
+
+from ..appcore.runtime_context import Runtime
 from .base import BaseTool
 from .memory import (
     GetMemoriesTool,
+    SearchMemoriesTool,
     CreateMemoryTool,
     UpdateMemoryTool,
     DeleteMemoryTool,
 )
-from .todos import (
-    TodoManager,
-    GetTodosTool,
-    CreateTodoTool,
-    UpdateTodoTool,
-    DeleteTodoTool,
-)
+from .subagents import RunSubagentTool, GetSubagentsListTool
+from .consult_inner_voice import ConsultInnerVoiceTool
+from .inner_loop import InnerLoopTool
 from .filesystem import (
     ReadFolderTool,
     ReadFileTool,
     WriteFileTool,
     CreateFolderTool,
     DeletePathsTool,
-    InsertTextTool,
     ReplaceTextTool,
-    SearchInFileTool,
+    DeleteLinesTool,
+    TransferLinesTool,
+    FsSearchTool,
     CopyPathsTool,
     RenamePathTool,
     MovePathsTool,
     PathStatTool,
+    FsListTransactionsTool,
+    FsUndoTransactionTool,
+    ImagesGetTool,
 )
-from .terminal import RunTerminalTool
-from .documents import CreateWordDocumentTool
-from .visualization import MultiXYPlotTool
-from .web import WebSearchTool, ImageGenerationTool
-from .history import (
-    GetChatHistoryMetadataTool,
-    GetChatHistoryEntryTool,
-    DeleteChatHistoryEntriesTool,
-    GetChatHistoryStatsTool,
+from .rag import RagListCollectionsTool, RagSearchTool, SearchConfluenceTool
+from .web import WebSearchTool
+from .canvas import (
+    CanvasCreateTool,
+    CanvasListTool,
+    CanvasSetCurrentTool,
+    CanvasGetTool,
+    CanvasGetImageTool,
+    CanvasExportPngTool,
+    CanvasImportImageTool,
+    CanvasSampleColorTool,
+    CanvasBrushSetTool,
+    CanvasStrokeTool,
+    CanvasLineTool,
+    CanvasShapeTool,
+    CanvasFillTool,
+    CanvasUndoTool,
+    CanvasRedoTool,
+    CanvasDeleteTool,
+    CanvasRenameTool,
+    CanvasDuplicateTool,
+    CanvasLayerCreateTool,
+    CanvasLayerUpdateTool,
+    CanvasLayerDeleteTool,
 )
+from .session import SetSessionMetaTool, RunSummaryTool
+from .group_session import GroupPassTool, AskHumanTool
 
 __all__ = [
     # Base
     "BaseTool",
     # Memory
     "GetMemoriesTool",
+    "SearchMemoriesTool",
     "CreateMemoryTool",
     "UpdateMemoryTool",
     "DeleteMemoryTool",
-    # Todos
-    "TodoManager",
-    "GetTodosTool",
-    "CreateTodoTool",
-    "UpdateTodoTool",
-    "DeleteTodoTool",
+    # Inner Voice
+    "ConsultInnerVoiceTool",
+    # Inner Loop
+    "InnerLoopTool",
+    # Sub-agents
+    "RunSubagentTool",
+    "GetSubagentsListTool",
     # Filesystem
     "ReadFolderTool",
     "ReadFileTool",
     "WriteFileTool",
     "CreateFolderTool",
+    # Agents
     "DeletePathsTool",
-    "InsertTextTool",
     "ReplaceTextTool",
-    "SearchInFileTool",
+    "DeleteLinesTool",
+    "TransferLinesTool",
+    "FsSearchTool",
     "CopyPathsTool",
     "RenamePathTool",
     "MovePathsTool",
     "PathStatTool",
-    # Terminal
-    "RunTerminalTool",
-    # Documents
-    "CreateWordDocumentTool",
-    # Visualization
-    "MultiXYPlotTool",
+    "FsListTransactionsTool",
+    "FsUndoTransactionTool",
+    "ImagesGetTool",
+    # RAG
+    "RagListCollectionsTool",
+    "RagSearchTool",
+    # Confluence
+    "SearchConfluenceTool",
     # Web
     "WebSearchTool",
-    "ImageGenerationTool",
-    # History
-    "GetChatHistoryMetadataTool",
-    "GetChatHistoryEntryTool",
-    "DeleteChatHistoryEntriesTool",
-    "GetChatHistoryStatsTool",
+    # Canvas
+    "CanvasCreateTool",
+    "CanvasListTool",
+    "CanvasSetCurrentTool",
+    "CanvasGetTool",
+    "CanvasGetImageTool",
+    "CanvasExportPngTool",
+    "CanvasImportImageTool",
+    "CanvasSampleColorTool",
+    "CanvasBrushSetTool",
+    "CanvasStrokeTool",
+    "CanvasLineTool",
+    "CanvasShapeTool",
+    "CanvasFillTool",
+    "CanvasUndoTool",
+    "CanvasRedoTool",
+    "CanvasDeleteTool",
+    "CanvasRenameTool",
+    "CanvasDuplicateTool",
+    "CanvasLayerCreateTool",
+    "CanvasLayerUpdateTool",
+    "CanvasLayerDeleteTool",
+    # Session
+    "SetSessionMetaTool",
+    "RunSummaryTool",
+    # Group Session
+    "GroupPassTool",
+    "AskHumanTool",
 ]
 
 
-def get_default_tools(project_root: str, permission_required: bool = False):
+def get_default_tools():
     """Get the default set of tools configured for a project.
-    
-    Args:
-        project_root: Root directory for file operations
-        permission_required: Whether tools need user permission
-        
+ 
     Returns:
         List of tool instances
     """
-    return [
+
+    tools = [
         # Memory
         GetMemoriesTool(),
+        SearchMemoriesTool(),
         CreateMemoryTool(),
         UpdateMemoryTool(),
         DeleteMemoryTool(),
-        # Chat History
-        # GetChatHistoryMetadataTool(),
-        # GetChatHistoryEntryTool(),
-        # DeleteChatHistoryEntriesTool(),
-        # GetChatHistoryStatsTool(),
-        # Todos
-        # GetTodosTool(),
-        # CreateTodoTool(),
-        # UpdateTodoTool(),
-        # DeleteTodoTool(),
+        # RAG
+        RagListCollectionsTool(),
+        RagSearchTool(),
+        # Confluence
+        SearchConfluenceTool(),
+        # Canvas
+        CanvasCreateTool(),
+        CanvasListTool(),
+        CanvasSetCurrentTool(),
+        CanvasGetTool(),
+        CanvasGetImageTool(),
+        CanvasExportPngTool(),
+        CanvasImportImageTool(),
+        CanvasSampleColorTool(),
+        CanvasBrushSetTool(),
+        CanvasStrokeTool(),
+        CanvasLineTool(),
+        CanvasShapeTool(),
+        CanvasFillTool(),
+        CanvasUndoTool(),
+        CanvasRedoTool(),
+        CanvasDeleteTool(),
+        CanvasRenameTool(),
+        CanvasDuplicateTool(),
+        CanvasLayerCreateTool(),
+        CanvasLayerUpdateTool(),
+        CanvasLayerDeleteTool(),
+        # Agents
+        ConsultInnerVoiceTool(),
+        GetSubagentsListTool(),
+        RunSubagentTool(),
+        # InnerLoopTool(),
+        # Session
+        SetSessionMetaTool(),
+        RunSummaryTool(),
+        # Group Session
+        GroupPassTool(),
+        AskHumanTool(),
         # Filesystem
-        ReadFolderTool(root_path=project_root),
-        ReadFileTool(root_path=project_root),
-        WriteFileTool(root_path=project_root, permission_required=permission_required),
-        CreateFolderTool(root_path=project_root, permission_required=permission_required),
-        DeletePathsTool(root_path=project_root, permission_required=permission_required),
-        InsertTextTool(root_path=project_root, permission_required=permission_required),
-        ReplaceTextTool(root_path=project_root, permission_required=permission_required),
-        SearchInFileTool(root_path=project_root),
-        CopyPathsTool(root_path=project_root),
-        RenamePathTool(root_path=project_root),
-        MovePathsTool(root_path=project_root),
-        PathStatTool(root_path=project_root),
-        # Terminal
-        # RunTerminalTool(root_path=project_root, permission_required=permission_required),
-        # Documents
-        # CreateWordDocumentTool(root_path=project_root, permission_required=permission_required),
-        # Visualization
-        # MultiXYPlotTool(),
+        ReadFolderTool(),
+        ReadFileTool(),
+        ImagesGetTool(),
+        WriteFileTool(),
+        CreateFolderTool(),
+        DeletePathsTool(),
+        ReplaceTextTool(),
+        DeleteLinesTool(),
+        TransferLinesTool(),
+        FsSearchTool(),
+        CopyPathsTool(),
+        RenamePathTool(),
+        MovePathsTool(),
+        PathStatTool(),
         # Web & Media
-        # WebSearchTool(),
-        # ImageGenerationTool(),
+        WebSearchTool(),
     ]
+
+    # Fs revisions: keep these tools present for consistency; they return a clean error if
+    # FsRevisionStore is unavailable.
+    tools.extend([
+        FsListTransactionsTool(),
+        FsUndoTransactionTool(),
+    ])
+
+    return tools

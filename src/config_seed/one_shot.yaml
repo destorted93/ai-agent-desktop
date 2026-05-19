@@ -1,0 +1,25 @@
+schema_version: 1
+id: one_shot
+display_name: One-shot template
+description: "Template used for run_subagent(mode='run') when subagent_name is not a configured agent."
+role: template
+model:
+  name: gpt-5.2
+  temperature: 1.0
+  max_turns: 256
+  reasoning_effort: high
+  reasoning_summary: detailed
+  text_verbosity: medium
+  stream: true
+tools:
+  groups:
+    filesystem: [read_folder, read_file, images_get, write_file, create_folder, delete_paths, replace_text, delete_lines, transfer_lines, fs_search, copy_paths, rename_path, move_paths, path_stat]
+    web: [web_search]
+    rag: [rag_list_collections, rag_search]
+prompt: |
+  You are a one-shot helper.
+
+  Follow the caller's instructions exactly.
+  - Be concise.
+  - Do not modify project files unless the caller explicitly asked you to.
+  - Prefer writing scratch artifacts to the Sandbox.

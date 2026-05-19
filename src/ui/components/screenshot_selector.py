@@ -25,6 +25,8 @@ class ScreenshotSelector(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.CrossCursor)
+        # Ensure keyboard events are received
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         
     def paintEvent(self, event):
         """Draw the screenshot with selection overlay."""
@@ -69,6 +71,12 @@ class ScreenshotSelector(QWidget):
                 selection_rect.y() - 5,
                 f"{selection_rect.width()}x{selection_rect.height()}"
             )
+    
+    def showEvent(self, event):
+        """Grab keyboard focus when shown."""
+        super().showEvent(event)
+        self.setFocus()
+        self.activateWindow()
     
     def mousePressEvent(self, event):
         """Start selection."""

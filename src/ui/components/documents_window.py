@@ -1,45 +1,23 @@
 """Documents/Collections management window for RAG system."""
 
-import os
-import traceback
+import uuid
 from typing import Optional, List, Dict, Any
 from pathlib import Path
-
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
     QLineEdit, QTextEdit, QFileDialog, QSplitter, QWidget,
     QProgressDialog, QAbstractItemView, QComboBox, QSpinBox,
-    QGroupBox, QFormLayout, QScrollArea
+    QGroupBox, QFormLayout, QScrollArea, QListWidget, QListWidgetItem, QCheckBox
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QThread, QTimer
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
+from ...appcore.runtime_context import Runtime
 from PyQt6.QtGui import QFont
+from ..screen_utils import validate_window_position
 
 
 # Supported document extensions
 SUPPORTED_EXTENSIONS = {".txt", ".pdf", ".docx"}
-
-
-class WorkerThread(QThread):
-    """Worker thread for long-running operations to avoid UI freezes."""
-    
-    finished = pyqtSignal(dict)
-    error = pyqtSignal(str)
-    progress = pyqtSignal(str)
-    
-    def __init__(self, func, *args, **kwargs):
-        super().__init__()
-        self.func = func
-        self.args = args
-        self.kwargs = kwargs
-    
-    def run(self):
-        try:
-            result = self.func(*self.args, **self.kwargs)
-            self.finished.emit(result if isinstance(result, dict) else {"status": "success", "data": result})
-        except Exception as e:
-            traceback.print_exc()
-            self.error.emit(str(e))
 
 
 class ChunksViewerDialog(QDialog):
@@ -50,7 +28,7 @@ class ChunksViewerDialog(QDialog):
         self.setWindowTitle(f"Chunks - {collection_name}")
         self.setModal(False)
         self.resize(800, 600)
-        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.WindowType.Window)
         
         self.chunks = chunks or []
         self._setup_ui()
@@ -140,9 +118,9 @@ class ChunksViewerDialog(QDialog):
             text = chunk.get("document", chunk.get("text", ""))
             preview = text[:100].replace("\n", " ") + "..." if len(text) > 100 else text.replace("\n", " ")
             self.table.setItem(i, 3, QTableWidgetItem(preview))
-        
+
         self.info_label.setText(f"Total chunks: {len(self.chunks)}")
-    
+
     def _on_selection_changed(self):
         selected = self.table.selectedItems()
         if selected:
@@ -151,7 +129,7 @@ class ChunksViewerDialog(QDialog):
                 chunk = self.chunks[row]
                 text = chunk.get("document", chunk.get("text", ""))
                 metadata = chunk.get("metadata", {})
-                
+
                 display = f"=== Chunk #{row + 1} ===\n"
                 display += f"ID: {chunk.get('id', 'N/A')}\n"
                 display += f"Metadata: {metadata}\n"
@@ -159,22 +137,63 @@ class ChunksViewerDialog(QDialog):
                 self.content_text.setText(display)
 
 
+class AddUrlDialog(QDialog):
+    """Dialog to add a URL source (e.g., Confluence page)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Add URL")
+        self.setModal(True)
+        self.resize(720, 170)
+
+        self.url_input = QLineEdit()
+        self.url_input.setPlaceholderText("https://confluence.yoursite.com/... ")
+
+        self.include_children_cb = QCheckBox("Include child pages")
+        self.include_children_cb.setChecked(False)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        label = QLabel("Confluence URL")
+        label.setStyleSheet("font-weight: bold;")
+        layout.addWidget(label)
+        layout.addWidget(self.url_input)
+        layout.addWidget(self.include_children_cb)
+
+        btns = QHBoxLayout()
+        btns.addStretch(1)
+        cancel_btn = QPushButton("Cancel")
+        add_btn = QPushButton("Add")
+        cancel_btn.clicked.connect(self.reject)
+        add_btn.clicked.connect(self.accept)
+        btns.addWidget(cancel_btn)
+        btns.addWidget(add_btn)
+        layout.addLayout(btns)
+
+    def get_result(self) -> Dict[str, Any]:
+        return {
+            "url": (self.url_input.text() or "").strip(),
+            "include_child_pages": bool(self.include_children_cb.isChecked()),
+        }
+
+
+
 class NewCollectionDialog(QDialog):
     """Dialog for creating a new collection with documents."""
     
-    collection_created = pyqtSignal(dict)  # Emits result when collection is created
-    
-    def __init__(self, parent=None, app=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self._app = app
         self.setWindowTitle("New Document Collection")
         self.setModal(True)
         self.resize(600, 500)
         
-        self._selected_files: List[str] = []
-        self._worker: Optional[WorkerThread] = None
+        self._selected_files: List[Any] = []
         self._progress_dialog: Optional[QProgressDialog] = None
         
+        self._bus_unsub_reply = None
+        self._bus_unsub_progress = None
         self._setup_ui()
     
     def _setup_ui(self):
@@ -223,19 +242,23 @@ class NewCollectionDialog(QDialog):
         
         layout.addWidget(chunk_group)
         
-        # Documents group
-        docs_group = QGroupBox("Documents")
+        # Sources group
+        docs_group = QGroupBox("Sources")
         docs_layout = QVBoxLayout(docs_group)
         
-        docs_info = QLabel("Supported formats: .txt, .pdf, .docx")
+        docs_info = QLabel("Supported: .txt, .pdf, .docx, Confluence URLs")
         docs_info.setStyleSheet("color: #888; font-size: 11px;")
         docs_layout.addWidget(docs_info)
         
-        # File list
-        self.files_list = QTextEdit()
-        self.files_list.setReadOnly(True)
-        self.files_list.setPlaceholderText("No files selected. Click 'Add Files' to select documents.")
-        self.files_list.setMaximumHeight(100)
+        # Sources list
+        self.files_list = QListWidget()
+        self.files_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.files_list.installEventFilter(self)
+        self.files_list.setMaximumHeight(120)
+        self.files_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.files_list.itemSelectionChanged.connect(self._on_sources_selection_changed)
+        self.files_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.files_list.setTextElideMode(Qt.TextElideMode.ElideNone)
         docs_layout.addWidget(self.files_list)
         
         # Add files button
@@ -244,6 +267,17 @@ class NewCollectionDialog(QDialog):
         self.add_files_btn.clicked.connect(self._on_add_files)
         self._style_button(self.add_files_btn)
         files_btn_layout.addWidget(self.add_files_btn)
+
+        self.add_url_btn = QPushButton("🔗 Add URL...")
+        self.add_url_btn.clicked.connect(self._on_add_url)
+        self._style_button(self.add_url_btn)
+        files_btn_layout.addWidget(self.add_url_btn)
+
+        self.remove_selected_btn = QPushButton("Remove Selected")
+        self.remove_selected_btn.clicked.connect(self._on_remove_selected)
+        self._style_button(self.remove_selected_btn)
+        self.remove_selected_btn.setEnabled(False)
+        files_btn_layout.addWidget(self.remove_selected_btn)
         
         self.clear_files_btn = QPushButton("Clear")
         self.clear_files_btn.clicked.connect(self._on_clear_files)
@@ -311,122 +345,221 @@ class NewCollectionDialog(QDialog):
                     if ext in SUPPORTED_EXTENSIONS:
                         self._selected_files.append(f)
             self._update_files_display()
-    
+
+    def _source_key(self, src: Any) -> str:
+        if isinstance(src, dict):
+            url = str(src.get("url") or "").strip()
+            return f"URL::{url}"
+        s = str(src or "").strip()
+        if self._is_url(s):
+            return f"URL::{s}"
+        return f"FILE::{s}"
+
+    def _source_tooltip(self, src: Any) -> str:
+        if isinstance(src, dict):
+            url = str(src.get("url") or "").strip()
+            child = bool(src.get("include_child_pages", False))
+            return url + ("\n(include child pages)" if child else "")
+        return str(src or "").strip()
+
+    def _on_add_url(self):
+        dlg = AddUrlDialog(parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        payload = dlg.get_result()
+        url = (payload.get("url") or "").strip()
+        if not url:
+            return
+        if not self._is_url(url):
+            QMessageBox.warning(self, "Validation Error", "URL must start with http:// or https://")
+            return
+
+        # Treat URL as a dict source so we can carry flags (e.g., include_child_pages)
+        src_obj = {"url": url, "include_child_pages": bool(payload.get("include_child_pages", False))}
+
+        # If URL already exists, update its flags instead of duplicating
+        replaced = False
+        for i, existing in enumerate(self._selected_files):
+            if isinstance(existing, dict) and str(existing.get("url", "")).strip() == url:
+                self._selected_files[i] = src_obj
+                replaced = True
+                break
+            if isinstance(existing, str) and existing.strip() == url:
+                self._selected_files[i] = src_obj
+                replaced = True
+                break
+
+        if not replaced:
+            self._selected_files.append(src_obj)
+
+        self._update_files_display()
+
+    def _on_sources_selection_changed(self):
+        try:
+            has_sel = bool(self.files_list.selectedItems())
+        except Exception:
+            has_sel = False
+        if hasattr(self, "remove_selected_btn"):
+            self.remove_selected_btn.setEnabled(has_sel)
+
+    def _on_remove_selected(self):
+        items = self.files_list.selectedItems() if self.files_list else []
+        if not items:
+            return
+
+        to_remove_keys = set()
+        for it in items:
+            key = it.data(Qt.ItemDataRole.UserRole)
+            if key:
+                to_remove_keys.add(str(key))
+
+        if not to_remove_keys:
+            return
+
+        self._selected_files = [s for s in self._selected_files if self._source_key(s) not in to_remove_keys]
+        self._update_files_display()
+
     def _on_clear_files(self):
         self._selected_files = []
         self._update_files_display()
-    
+        self._on_sources_selection_changed()
+
+    def _is_url(self, value: str) -> bool:
+        v = (value or "").strip().lower()
+        return v.startswith("http://") or v.startswith("https://")
+
+    def _format_source_label(self, value: Any) -> str:
+        if isinstance(value, dict):
+            url = str(value.get("url") or "").strip()
+            child = bool(value.get("include_child_pages", False))
+            return f"URL: {url}" + (" (children)" if child else "")
+
+        v = str(value or "").strip()
+        if self._is_url(v):
+            return f"URL: {v}"
+        return Path(v).name
+
     def _update_files_display(self):
-        if self._selected_files:
-            display = "\n".join([f"• {Path(f).name}" for f in self._selected_files])
-            self.files_list.setText(display)
-        else:
-            self.files_list.clear()
+        self.files_list.clear()
+        for src in self._selected_files:
+            label = self._format_source_label(src)
+            item = QListWidgetItem(f"• {label}")
+
+            # Tooltip shows full thing
+            tip = self._source_tooltip(src)
+            item.setToolTip(tip)
+
+            # Store a stable key so we can remove reliably (works for dict sources too)
+            item.setData(Qt.ItemDataRole.UserRole, self._source_key(src))
+
+            self.files_list.addItem(item)
+
+        self._on_sources_selection_changed()
     
+    def eventFilter(self, obj, event):
+        if obj is getattr(self, "files_list", None) and event.type() == QEvent.Type.KeyPress:
+            if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+                self._on_remove_selected()
+                return True
+        return super().eventFilter(obj, event)
+
     def _on_create(self):
         # Validate inputs
         name = self.name_input.text().strip()
         if not name:
             QMessageBox.warning(self, "Validation Error", "Collection name is required.")
             return
-        
+
         # Validate name format (alphanumeric and underscores only)
         if not all(c.isalnum() or c in "_-" for c in name):
             QMessageBox.warning(
-                self, "Validation Error",
-                "Collection name can only contain letters, numbers, underscores, and hyphens."
+                self,
+                "Validation Error",
+                "Collection name can only contain letters, numbers, underscores, and hyphens.",
             )
             return
-        
+
         if not self._selected_files:
-            QMessageBox.warning(self, "Validation Error", "Please select at least one document.")
+            QMessageBox.warning(self, "Validation Error", "Please add at least one file or URL.")
             return
-        
-        if not self._app:
-            QMessageBox.critical(self, "Error", "Application not available.")
-            return
-        
+
         # Disable UI during creation
         self.create_btn.setEnabled(False)
         self.cancel_btn.setEnabled(False)
-        
+
         # Show progress
         self._progress_dialog = QProgressDialog(
             "Creating collection and processing documents...",
-            None,  # No cancel button for now
-            0, 0,  # Indeterminate progress
-            self
+            None,  # No cancel button
+            0,
+            0,
+            self,
         )
         self._progress_dialog.setWindowTitle("Processing")
         self._progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
         self._progress_dialog.show()
-        
+
         # Prepare data
         description = self.desc_input.text().strip()
         tags_text = self.tags_input.text().strip()
         tags = [t.strip() for t in tags_text.split(",") if t.strip()] if tags_text else []
         chunk_size = self.chunk_size_spin.value()
         chunk_overlap = self.chunk_overlap_spin.value()
-        
-        # Run in worker thread to avoid blocking UI
-        self._worker = WorkerThread(
-            self._create_collection_sync,
-            name, description, tags, chunk_size, chunk_overlap
+
+        # Event-bus command (UI -> app): create collection + ingest files
+        bus = Runtime.get_event_bus()
+        reply_topic = f"documents.ui.reply.create_collection.{uuid.uuid4()}"
+        progress_topic = f"documents.ui.progress.create_collection.{uuid.uuid4()}"
+
+        self._bus_unsub_reply = None
+        self._bus_unsub_progress = None
+
+        def _cleanup_bus_subs():
+            try:
+                if self._bus_unsub_reply:
+                    self._bus_unsub_reply()
+            except Exception:
+                pass
+            try:
+                if self._bus_unsub_progress:
+                    self._bus_unsub_progress()
+            except Exception:
+                pass
+            self._bus_unsub_reply = None
+            self._bus_unsub_progress = None
+
+        def _on_progress(ev):
+            payload = getattr(ev, "payload", {}) or {}
+            msg = payload.get("message") if isinstance(payload, dict) else None
+            if msg and self._progress_dialog:
+                self._progress_dialog.setLabelText(str(msg))
+
+        def _on_reply(ev):
+            _cleanup_bus_subs()
+            payload = getattr(ev, "payload", {}) or {}
+            if isinstance(payload, dict):
+                self._on_create_finished(payload)
+            else:
+                self._on_create_finished({"status": "error", "message": "Unexpected reply payload"})
+
+        self._bus_unsub_progress = bus.subscribe(progress_topic, _on_progress)
+        self._bus_unsub_reply = bus.subscribe(reply_topic, _on_reply)
+
+        bus.publish(
+            "documents.cmd.create_collection_from_files",
+            {
+                "reply_topic": reply_topic,
+                "progress_topic": progress_topic,
+                "name": name,
+                "description": description,
+                "tags": tags,
+                "file_paths": list(self._selected_files),
+                "chunk_size": chunk_size,
+                "chunk_overlap": chunk_overlap,
+            },
         )
-        self._worker.finished.connect(self._on_create_finished)
-        self._worker.error.connect(self._on_create_error)
-        self._worker.start()
     
-    def _create_collection_sync(
-        self,
-        name: str,
-        description: str,
-        tags: List[str],
-        chunk_size: int,
-        chunk_overlap: int
-    ) -> Dict[str, Any]:
-        """Synchronous collection creation (runs in worker thread)."""
-        # Step 1: Create the collection
-        result = self._app.create_collection(name, description, "document", tags)
-        if result.get("status") != "success":
-            return result
-        
-        # Step 2: Chunk all documents
-        all_chunks = []
-        all_metadatas = []
-        
-        for file_path in self._selected_files:
-            chunk_result = self._app.chunk_document(file_path, chunk_size, chunk_overlap)
-            if chunk_result.get("status") != "success":
-                # Cleanup: delete the collection we just created
-                self._app.delete_collection(name)
-                return {
-                    "status": "error",
-                    "message": f"Failed to chunk {Path(file_path).name}: {chunk_result.get('message', 'Unknown error')}"
-                }
-            
-            chunks = chunk_result.get("chunks", [])
-            for chunk in chunks:
-                all_chunks.append(chunk.get("text", ""))
-                all_metadatas.append(chunk.get("metadata", {}))
-        
-        if not all_chunks:
-            self._app.delete_collection(name)
-            return {"status": "error", "message": "No content extracted from documents."}
-        
-        # Step 3: Add documents with embeddings
-        add_result = self._app.add_documents_to_collection(name, all_chunks, all_metadatas)
-        if add_result.get("status") != "success":
-            # Cleanup: delete the collection
-            self._app.delete_collection(name)
-            return add_result
-        
-        return {
-            "status": "success",
-            "collection": name,
-            "chunks_added": len(all_chunks),
-            "files_processed": len(self._selected_files)
-        }
     
     def _on_create_finished(self, result: Dict[str, Any]):
         if self._progress_dialog:
@@ -444,7 +577,6 @@ class NewCollectionDialog(QDialog):
                 f"Files processed: {result.get('files_processed', 0)}\n"
                 f"Chunks added: {result.get('chunks_added', 0)}"
             )
-            self.collection_created.emit(result)
             self.accept()
         else:
             QMessageBox.critical(
@@ -467,19 +599,33 @@ class NewCollectionDialog(QDialog):
 class DocumentsWindow(QDialog):
     """Main window for managing document collections."""
     
-    def __init__(self, parent=None, app=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self._app = app
         self.setWindowTitle("Document Collections")
         self.setModal(False)
         self.resize(900, 600)
-        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.WindowType.Window)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
         
+        # Restore last position if available
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        saved_pos = settings.value("documents_window_pos", None)
+        validated_pos = validate_window_position(saved_pos, 900, 600)
+        if validated_pos is not None:
+            x, y = validated_pos
+            self.move(x, y)
+        
         self._collections: List[Dict] = []
-        self._worker: Optional[WorkerThread] = None
         self._chunks_dialog: Optional[ChunksViewerDialog] = None
         
+        # Event-bus driven refresh (keeps UI in sync when collections change)
+        self._needs_refresh = False
+        self._refresh_pending = False
+        self._bus_unsub = Runtime.get_event_bus().subscribe(
+            "vectordb.collections.changed",
+            self._on_collections_changed_event,
+        )
         self._setup_ui()
     
     def _setup_ui(self):
@@ -591,40 +737,86 @@ class DocumentsWindow(QDialog):
             """)
     
     def showEvent(self, event):
-        """Called when window is shown - refresh is triggered by open_documents."""
+        """Called when window is shown."""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        saved_pos = settings.value("documents_window_pos", None)
+        validated_pos = validate_window_position(saved_pos, 900, 600)
+        if validated_pos is not None:
+            x, y = validated_pos
+            self.move(x, y)
+
         super().showEvent(event)
+
+        # If collections changed while we were hidden, refresh now.
+        if getattr(self, "_needs_refresh", False):
+            self._needs_refresh = False
+            QTimer.singleShot(0, self.refresh_collections)
     
     def refresh_collections(self):
-        """Refresh the collections list."""
-        if not self._app:
-            self._set_status("Error: Application not available")
-            return
-        
+        """Refresh the collections list (event-bus request)."""
         self._set_status("Loading collections...")
         self.refresh_btn.setEnabled(False)
-        
-        # Run in worker thread
-        self._worker = WorkerThread(self._app.get_collections)
-        self._worker.finished.connect(self._on_collections_loaded)
-        self._worker.error.connect(self._on_load_error)
-        self._worker.start()
+
+        bus = Runtime.get_event_bus()
+        reply_topic = f"documents.ui.reply.list_collections.{uuid.uuid4()}"
+
+        unsub = None
+
+        def _on_reply(ev):
+            nonlocal unsub
+            if unsub:
+                try:
+                    unsub()
+                except Exception:
+                    pass
+                unsub = None
+
+            self.refresh_btn.setEnabled(True)
+            payload = getattr(ev, "payload", {}) or {}
+            if not isinstance(payload, dict):
+                self._set_status("Error: Unexpected reply payload")
+                return
+
+            if payload.get("status") != "success":
+                self._set_status(f"Error: {payload.get('message', 'Unknown error')}")
+                return
+
+            collections = payload.get("collections", [])
+            if not isinstance(collections, list):
+                collections = []
+
+            self._collections = [c for c in collections if isinstance(c, dict)]
+            self._populate_table()
+            self._set_status(f"Loaded {len(self._collections)} collection(s)")
+
+        unsub = bus.subscribe(reply_topic, _on_reply)
+        bus.publish("documents.cmd.list_collections", {"reply_topic": reply_topic})
     
-    def _on_collections_loaded(self, result):
-        self.refresh_btn.setEnabled(True)
-        
-        # result could be a list directly or a dict with data
-        if isinstance(result, dict):
-            collections = result.get("data", [])
+
+    def _on_collections_changed_event(self, event):
+        """Handle vectordb.collections.changed events (delivered on UI thread via bus.pump())."""
+        try:
+            if not self.isVisible():
+                self._needs_refresh = True
+                return
+
+            # Debounce bursts (create + add docs + metadata update etc.)
+            if self._refresh_pending:
+                return
+            self._refresh_pending = True
+            QTimer.singleShot(150, self._refresh_from_bus)
+        except Exception:
+            # Never let event handling crash the window.
+            pass
+
+    def _refresh_from_bus(self):
+        self._refresh_pending = False
+        if self.isVisible():
+            self.refresh_collections()
         else:
-            collections = result if isinstance(result, list) else []
-        
-        self._collections = collections
-        self._populate_table()
-        self._set_status(f"Loaded {len(collections)} collection(s)")
-    
-    def _on_load_error(self, error_msg: str):
-        self.refresh_btn.setEnabled(True)
-        self._set_status(f"Error: {error_msg}")
+            self._needs_refresh = True
+
     
     def _populate_table(self):
         self.table.setRowCount(len(self._collections))
@@ -679,32 +871,48 @@ class DocumentsWindow(QDialog):
         return None
     
     def _on_new_collection(self):
-        dialog = NewCollectionDialog(self, app=self._app)
-        dialog.collection_created.connect(lambda _: self.refresh_collections())
+        dialog = NewCollectionDialog(self)
         dialog.exec()
     
     def _on_view_chunks(self):
         collection_name = self._get_selected_collection_name()
-        if not collection_name or not self._app:
+        if not collection_name:
             return
-        
+
         self._set_status(f"Loading chunks for '{collection_name}'...")
         self.view_chunks_btn.setEnabled(False)
         self.edit_btn.setEnabled(False)
         self.delete_btn.setEnabled(False)
-        
-        # Run in worker thread
-        self._worker = WorkerThread(
-            self._app.get_collection_documents,
-            collection_name
+
+        bus = Runtime.get_event_bus()
+        reply_topic = f"documents.ui.reply.get_chunks.{uuid.uuid4()}"
+
+        unsub = None
+
+        def _on_reply(ev):
+            nonlocal unsub
+            if unsub:
+                try:
+                    unsub()
+                except Exception:
+                    pass
+                unsub = None
+
+            result = getattr(ev, "payload", {}) or {}
+            if not isinstance(result, dict):
+                result = {"status": "error", "message": "Unexpected reply payload"}
+
+            self._on_chunks_loaded(collection_name, result)
+
+        unsub = bus.subscribe(reply_topic, _on_reply)
+        bus.publish(
+            "documents.cmd.get_chunks",
+            {"reply_topic": reply_topic, "collection_name": collection_name},
         )
-        self._worker.finished.connect(lambda r: self._on_chunks_loaded(collection_name, r))
-        self._worker.error.connect(self._on_chunks_load_error)
-        self._worker.start()
 
     def _on_edit_collection(self):
         collection_name = self._get_selected_collection_name()
-        if not collection_name or not self._app:
+        if not collection_name:
             return
         
         # For simplicity, we will just show a message box here.
@@ -743,9 +951,9 @@ class DocumentsWindow(QDialog):
     
     def _on_delete_collection(self):
         collection_name = self._get_selected_collection_name()
-        if not collection_name or not self._app:
+        if not collection_name:
             return
-        
+
         # Confirm deletion
         reply = QMessageBox.question(
             self,
@@ -753,23 +961,39 @@ class DocumentsWindow(QDialog):
             f"Are you sure you want to delete collection '{collection_name}'?\n\n"
             "This will permanently remove all documents and embeddings.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.No,
         )
-        
+
         if reply != QMessageBox.StandardButton.Yes:
             return
-        
+
         self._set_status(f"Deleting '{collection_name}'...")
         self.delete_btn.setEnabled(False)
-        
-        # Run in worker thread
-        self._worker = WorkerThread(
-            self._app.delete_collection,
-            collection_name
+
+        bus = Runtime.get_event_bus()
+        reply_topic = f"documents.ui.reply.delete_collection.{uuid.uuid4()}"
+
+        unsub = None
+
+        def _on_reply(ev):
+            nonlocal unsub
+            if unsub:
+                try:
+                    unsub()
+                except Exception:
+                    pass
+                unsub = None
+
+            result = getattr(ev, "payload", {}) or {}
+            if not isinstance(result, dict):
+                result = {"status": "error", "message": "Unexpected reply payload"}
+            self._on_delete_finished(result)
+
+        unsub = bus.subscribe(reply_topic, _on_reply)
+        bus.publish(
+            "documents.cmd.delete_collection",
+            {"reply_topic": reply_topic, "name": collection_name},
         )
-        self._worker.finished.connect(self._on_delete_finished)
-        self._worker.error.connect(self._on_delete_error)
-        self._worker.start()
     
     def _on_delete_finished(self, result: Dict[str, Any]):
         self.delete_btn.setEnabled(True)
@@ -787,3 +1011,26 @@ class DocumentsWindow(QDialog):
     def _set_status(self, message: str):
         self.status_label.setText(message)
         print(f"[DocumentsWindow] {message}")
+    
+    def closeEvent(self, event):
+        """Save window position when closing."""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        settings.setValue("documents_window_pos", (self.pos().x(), self.pos().y()))
+        self.hide()
+        event.ignore()
+
+    def __del__(self):
+        # Best-effort unsubscribe (prevents zombie listeners)
+        try:
+            if getattr(self, "_bus_unsub", None):
+                self._bus_unsub()
+        except Exception:
+            pass
+    
+    def hideEvent(self, event):
+        """Save window position when hiding."""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("ai-agent", "widget")
+        settings.setValue("documents_window_pos", (self.pos().x(), self.pos().y()))
+        super().hideEvent(event)

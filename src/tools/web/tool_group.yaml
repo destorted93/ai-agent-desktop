@@ -1,0 +1,5 @@
+id: web
+display_name: Web
+prompt_md: prompt.md
+tools:
+  - web_search

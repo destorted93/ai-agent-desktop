@@ -1,0 +1,5 @@
+id: consult_inner_voice
+display_name: Consult Inner Voice
+prompt_md: prompt.md
+tools:
+  - consult_ariane
