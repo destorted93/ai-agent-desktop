@@ -1,0 +1,6 @@
+id: session
+display_name: Session
+prompt_md: prompt.md
+tools:
+  - set_session_meta
+  - run_summary

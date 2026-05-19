@@ -1,0 +1,20 @@
+id: filesystem
+display_name: Filesystem
+prompt_md: prompt.md
+tools:
+  - read_folder
+  - read_file
+  - images_get
+  - write_file
+  - create_folder
+  - delete_paths
+  - replace_text
+  - delete_lines
+  - transfer_lines
+  - fs_search
+  - copy_paths
+  - rename_path
+  - move_paths
+  - path_stat
+  - fs_list_transactions
+  - fs_undo_transaction

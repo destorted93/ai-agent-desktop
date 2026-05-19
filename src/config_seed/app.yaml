@@ -1,0 +1,48 @@
+schema_version: 1
+
+# The single app-level settings file.
+# Agent definitions live under Config/agents/*.yaml
+
+api:
+  mode: responses  # responses | chat_completions
+  base_url: ""   # non-secret. api_token stays in OS keyring.
+
+paths:
+  project_root: null
+
+ui:
+  theme: dark
+  widget_opacity: 0.95
+  widget_width: 60
+  widget_height: 60
+  chat_width: 600
+  chat_height: 700
+  always_on_top: true
+  font_size: 13
+  show_token_usage: true
+
+transcribe:
+  model: gpt-4o-transcribe
+  language: en
+  sample_rate: 16000
+
+tts:
+  model: gpt-4o-mini-tts
+  voice: coral
+  format: mp3
+
+embedding:
+  model: openai.text-embedding-3-large
+
+tools:
+  terminal_permission_required: false
+  filesystem_permission_required: false
+
+# Confluence tokens are stored in the OS keychain, keyed by base_url.
+# This section stores only the non-secret base URL index so the UI can list them.
+confluence:
+  tokens: []
+
+agents:
+  primary: aria
+  family: ariane

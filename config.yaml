@@ -6,7 +6,7 @@ user_id: default_user
 
 # API Settings (api_token is stored in OS keyring)
 api:
-  base_url: 'https://api.openai.com/v1'  # If empty, will use value from secure storage or default https://api.openai.com/v1
+  base_url: ''  # If empty, will use value from secure storage or default https://api.openai.com/v1
 
 # UI Settings
 ui:
@@ -42,6 +42,10 @@ tts:
   model: gpt-4o-mini-tts
   voice: coral
   format: mp3
+
+# Embedding Settings (for RAG/Vector Database)
+embedding:
+  model: text-embedding-3-small
 
 # Tool Settings
 tools:

@@ -109,6 +109,9 @@ class TranscribeService:
             )
             
             text = getattr(transcription, "text", None)
+
+            print(transcription)
+
             if not text:
                 return {"status": "error", "message": "No transcription returned"}
             
@@ -118,6 +121,7 @@ class TranscribeService:
                 "language": lang,
             }
         except Exception as e:
+            print(f"Error during transcription: {e}")
             return {"status": "error", "message": str(e)}
 
     def transcribe(

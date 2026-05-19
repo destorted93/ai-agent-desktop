@@ -5,18 +5,34 @@
 openai>=1.40.0
 
 # UI
-PyQt6>=6.6.0
+PyQt6==6.10.2
+PyQt6-Qt6==6.10.1
 
 # Audio
 sounddevice>=0.4.6
 numpy>=1.24.0
+
+# Vector storage & RAG & confluence
+chromadb
+langchain
+langchain-community
+langchain-text-splitters
+pypdf
+docx2txt
+atlassian-python-api
+requests
+markdownify
+mistune
+Pillow
+pytesseract
+md2cf
 
 # Encryption & Security
 cryptography>=41.0.0
 keyring>=24.0.0
 
 # Configuration
-pyyaml>=6.0.0
+PyYAML==6.0.1
 pydantic>=2.0.0
 
 # Syntax highlighting

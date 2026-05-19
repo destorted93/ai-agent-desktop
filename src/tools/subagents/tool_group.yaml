@@ -1,0 +1,6 @@
+id: subagents
+display_name: Sub-agents
+prompt_md: prompt.md
+tools:
+  - run_subagent
+  - get_subagents_list

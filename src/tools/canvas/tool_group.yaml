@@ -1,0 +1,25 @@
+id: canvas
+display_name: Canvas
+prompt_md: prompt.md
+tools:
+  - canvas_create
+  - canvas_list
+  - canvas_set_current
+  - canvas_get
+  - canvas_get_image
+  - canvas_export_png
+  - canvas_import_image
+  - canvas_sample_color
+  - canvas_brush_set
+  - canvas_stroke
+  - canvas_line
+  - canvas_shape
+  - canvas_fill
+  - canvas_undo
+  - canvas_redo
+  - canvas_delete
+  - canvas_rename
+  - canvas_duplicate
+  - canvas_layer_create
+  - canvas_layer_update
+  - canvas_layer_delete

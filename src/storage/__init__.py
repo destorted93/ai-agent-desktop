@@ -9,8 +9,10 @@ from .secure import (
     write_encrypted_json,
     SecureStorage,
 )
-from .chat_history import ChatHistoryManager
+from .sessions_manager import SessionsManager
 from .memory import MemoryManager
+from .vectordb import VectorDBManager
+from .sandbox_storage import get_sandbox_root
 
 __all__ = [
     "get_app_data_dir",
@@ -20,6 +22,8 @@ __all__ = [
     "read_encrypted_json",
     "write_encrypted_json",
     "SecureStorage",
-    "ChatHistoryManager",
+    "SessionsManager",
     "MemoryManager",
+    "VectorDBManager",
+    "get_sandbox_root",
 ]

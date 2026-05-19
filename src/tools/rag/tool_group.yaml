@@ -1,0 +1,7 @@
+id: rag
+display_name: RAG
+prompt_md: prompt.md
+tools:
+  - rag_list_collections
+  - rag_search
+  - search_confluence

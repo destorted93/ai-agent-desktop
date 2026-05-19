@@ -1,0 +1,6 @@
+id: group_session
+display_name: Group Session
+prompt_md: prompt.md
+tools:
+  - group_pass
+  - ask_human
